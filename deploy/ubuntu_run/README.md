@@ -58,6 +58,31 @@ blu-agent-uninstall
 source ~/.bashrc
 ```
 
+### 从 Git 仓库一键更新并启动
+
+第一次先克隆私有仓库：
+
+```bash
+git clone git@github.com:cyh0000008/Agent_Longitudinal.git
+cd Agent_Longitudinal
+```
+
+配置好 GitHub SSH key 后，日常更新前先在运行机器上停止旧的机器人进程（如果正在运行，在其终端按 `Ctrl+C`），然后执行：
+
+```bash
+bash deploy/ubuntu_run/update_blu_agent.sh
+```
+
+脚本会检查工作区无未提交改动、快进更新 `origin/main`、刷新依赖、保留用户级 `.env`，运行健康检查后以前台方式启动最新版。按 `Ctrl+C` 可停止机器人。请勿同时运行多个实例，也不要同时在 Windows 和 Ubuntu 启动同一个机器人。
+
+只更新和安装、不启动机器人：
+
+```bash
+bash deploy/ubuntu_run/update_blu_agent.sh --no-start
+```
+
+首次安装或更新时如果缺少凭据，安装器会提示输入。配置文件保存在 `~/.config/blu-agent/blu-agent.env`，该文件不会被 Git 更新覆盖。车辆数据、数据库及机器专属运行配置也不在仓库中，需要提前通过获准渠道放到 Ubuntu 并配置对应路径。
+
 ## 3. 凭据和环境变量
 
 迁移到 Ubuntu 后仍使用同一个飞书机器人和同一个模型 API 配置。下面这些值不需要因为换机器而改变：
