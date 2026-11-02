@@ -1,0 +1,12 @@
+{
+  "func_folder_path": "metrics/code",
+  "source_path": "/path/to/authorized/h5_data",
+  "query_date": "",
+  "query_software": "",
+  "max_depth": 4,
+  "output_dir": "/path/to/analysis_output",
+  "report_prefix": "Longitudinal_Report",
+  "file_pattern": "*.h5",
+  "suffix": "_done",
+  "preprocess_signals": []
+}

@@ -1,0 +1,137 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <filter id="shadow" x="-12%" y="-12%" width="124%" height="124%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#64748b" flood-opacity="0.18"/>
+    </filter>
+    <marker id="arrowBlue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#2563eb"/>
+    </marker>
+    <marker id="arrowGreen" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#059669"/>
+    </marker>
+    <marker id="arrowOrange" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#ea580c"/>
+    </marker>
+    <style>
+      .title { font: 700 40px "Microsoft YaHei", "PingFang SC", Arial, sans-serif; fill: #0f172a; }
+      .subtitle { font: 400 20px "Microsoft YaHei", "PingFang SC", Arial, sans-serif; fill: #475569; }
+      .section { font: 700 21px "Microsoft YaHei", "PingFang SC", Arial, sans-serif; fill: #334155; }
+      .boxTitle { font: 700 24px "Microsoft YaHei", "PingFang SC", Arial, sans-serif; fill: #ffffff; }
+      .boxText { font: 400 18px "Microsoft YaHei", "PingFang SC", Arial, sans-serif; fill: #334155; }
+      .small { font: 400 15px "Microsoft YaHei", "PingFang SC", Arial, sans-serif; fill: #64748b; }
+      .capTitle { font: 700 22px "Microsoft YaHei", "PingFang SC", Arial, sans-serif; fill: #0f172a; }
+      .panel { fill: #ffffff; stroke: #dbe4ef; stroke-width: 1.4; }
+      .card { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.2; }
+      .resource { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 1.2; }
+      .blueLine { stroke: #2563eb; stroke-width: 4.2; fill: none; marker-end: url(#arrowBlue); }
+      .greenLine { stroke: #059669; stroke-width: 4.2; fill: none; marker-end: url(#arrowGreen); }
+      .orangeLine { stroke: #ea580c; stroke-width: 3.6; fill: none; marker-end: url(#arrowOrange); stroke-dasharray: 10 8; }
+      .thinLine { stroke: #94a3b8; stroke-width: 2.6; fill: none; marker-end: url(#arrowBlue); stroke-dasharray: 7 7; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="900" fill="#f6f8fb"/>
+  <rect x="40" y="34" width="1520" height="832" rx="26" fill="#ffffff" stroke="#e2e8f0" filter="url(#shadow)"/>
+
+  <text x="76" y="78" class="title">布鲁系统框架</text>
+  <text x="78" y="126" class="subtitle">飞书入口 · DeepSeek 总控 · 本地工具链 · Codex 维护</text>
+
+  <rect x="76" y="154" width="1448" height="412" rx="22" class="panel"/>
+  <text x="104" y="188" class="section">主链路</text>
+  <text x="194" y="188" class="small">用户需求进入飞书，DeepSeek 编排，本地工具执行，结果回到群里</text>
+
+  <rect x="106" y="220" width="260" height="250" rx="16" class="card" filter="url(#shadow)"/>
+  <rect x="106" y="220" width="260" height="54" rx="16" fill="#2563eb"/>
+  <text x="132" y="255" class="boxTitle">飞书智能体应用</text>
+  <text x="132" y="312" class="boxText">群聊消息 / @机器人</text>
+  <text x="132" y="344" class="boxText">自然语言需求</text>
+  <text x="132" y="376" class="boxText">BLF / H5 / 日志上传</text>
+  <text x="132" y="408" class="boxText">报告、表格、图示回群</text>
+
+  <rect x="474" y="220" width="300" height="250" rx="16" class="card" filter="url(#shadow)"/>
+  <rect x="474" y="220" width="300" height="54" rx="16" fill="#7c3aed"/>
+  <text x="502" y="255" class="boxTitle">DeepSeek 云端大脑</text>
+  <text x="502" y="312" class="boxText">理解用户真实意图</text>
+  <text x="502" y="344" class="boxText">判断本地能力是否可用</text>
+  <text x="502" y="376" class="boxText">抽取任务参数</text>
+  <text x="502" y="408" class="boxText">编排工具并润色回复</text>
+
+  <rect x="882" y="220" width="320" height="250" rx="16" class="card" filter="url(#shadow)"/>
+  <rect x="882" y="220" width="320" height="54" rx="16" fill="#059669"/>
+  <text x="910" y="255" class="boxTitle">本地 Agent 服务</text>
+  <text x="910" y="312" class="boxText">事件去重 / 会话隔离</text>
+  <text x="910" y="344" class="boxText">文件下载、解析、清理</text>
+  <text x="910" y="376" class="boxText">数据库版本选择</text>
+  <text x="910" y="408" class="boxText">诊断执行与报告渲染</text>
+
+  <rect x="1300" y="220" width="190" height="250" rx="16" class="card" filter="url(#shadow)"/>
+  <rect x="1300" y="220" width="190" height="54" rx="16" fill="#ea580c"/>
+  <text x="1326" y="255" class="boxTitle">Codex 仓库</text>
+  <text x="1326" y="312" class="boxText">本地代码维护</text>
+  <text x="1326" y="344" class="boxText">规则文档迭代</text>
+  <text x="1326" y="376" class="boxText">调试与启动脚本</text>
+
+  <rect x="820" y="74" width="670" height="84" rx="16" class="resource"/>
+  <text x="848" y="108" class="section">本地知识与数据</text>
+  <text x="848" y="140" class="small">ARXML 数据库 · 故障表 Excel · ADAS 接口规则 · 历史分析代码 · 图表模板</text>
+
+  <path d="M366 345 H474" class="blueLine"/>
+  <text x="412" y="331" class="small">用户请求</text>
+  <circle cx="386" cy="326" r="14" fill="#ffffff" stroke="#2563eb" stroke-width="3"/>
+  <text x="382" y="332" class="small" fill="#2563eb">1</text>
+  <path d="M774 345 H882" class="blueLine"/>
+  <text x="822" y="331" class="small">任务分发</text>
+  <circle cx="796" cy="326" r="14" fill="#ffffff" stroke="#2563eb" stroke-width="3"/>
+  <text x="792" y="332" class="small" fill="#2563eb">2</text>
+  <path d="M1202 345 H1300" class="orangeLine"/>
+  <text x="1242" y="331" class="small">代码迭代</text>
+  <circle cx="1216" cy="326" r="14" fill="#ffffff" stroke="#ea580c" stroke-width="3"/>
+  <text x="1212" y="332" class="small" fill="#ea580c">6</text>
+  <path d="M1042 220 V158" class="thinLine"/>
+  <text x="1058" y="193" class="small">读取知识</text>
+  <path d="M882 420 H774" class="thinLine"/>
+  <text x="822" y="408" class="small">结果润色</text>
+  <circle cx="796" cy="401" r="14" fill="#ffffff" stroke="#7c3aed" stroke-width="3"/>
+  <text x="792" y="407" class="small" fill="#7c3aed">4</text>
+  <path d="M474 420 H366" class="greenLine"/>
+  <text x="412" y="408" class="small">报告回群</text>
+  <circle cx="386" cy="401" r="14" fill="#ffffff" stroke="#059669" stroke-width="3"/>
+  <text x="382" y="407" class="small" fill="#059669">5</text>
+
+  <text x="76" y="614" class="section">本地能力工具箱</text>
+
+  <rect x="76" y="642" width="448" height="150" rx="16" class="card" filter="url(#shadow)"/>
+  <rect x="76" y="642" width="448" height="46" rx="16" fill="#dcfce7"/>
+  <text x="106" y="672" class="capTitle">性能问题分析</text>
+  <text x="106" y="722" class="boxText">ACC / APA / 稳定性问题识别</text>
+  <text x="106" y="752" class="boxText">问题时间点 + 总线信号图示</text>
+
+  <rect x="576" y="642" width="448" height="150" rx="16" class="card" filter="url(#shadow)"/>
+  <rect x="576" y="642" width="448" height="46" rx="16" fill="#dbeafe"/>
+  <text x="606" y="672" class="capTitle">执行器分析 / 查阅</text>
+  <text x="606" y="722" class="boxText">制动 EBCM / ebooster，驱动 PDF / ECP / ECM</text>
+  <text x="606" y="752" class="boxText">握手、降级、状态未闭环检查</text>
+
+  <rect x="1076" y="642" width="448" height="150" rx="16" class="card" filter="url(#shadow)"/>
+  <rect x="1076" y="642" width="448" height="46" rx="16" fill="#ffedd5"/>
+  <text x="1106" y="672" class="capTitle">应用层 / 底软故障诊断</text>
+  <text x="1106" y="722" class="boxText">FDA7：应用层故障，DID 字节流解析</text>
+  <text x="1106" y="752" class="boxText">FDA3：底软故障，slog / fault_event 解析</text>
+
+  <path d="M1042 470 V584 H300 V642" class="greenLine"/>
+  <text x="430" y="572" class="small">调用性能分析</text>
+  <circle cx="398" cy="568" r="14" fill="#ffffff" stroke="#059669" stroke-width="3"/>
+  <text x="394" y="574" class="small" fill="#059669">3</text>
+  <path d="M1042 470 V584 H800 V642" class="greenLine"/>
+  <text x="812" y="572" class="small">调用执行器分析</text>
+  <circle cx="780" cy="568" r="14" fill="#ffffff" stroke="#059669" stroke-width="3"/>
+  <text x="776" y="574" class="small" fill="#059669">3</text>
+  <path d="M1042 470 V584 H1300 V642" class="greenLine"/>
+  <text x="1162" y="572" class="small">调用故障查询</text>
+  <circle cx="1126" cy="568" r="14" fill="#ffffff" stroke="#059669" stroke-width="3"/>
+  <text x="1122" y="574" class="small" fill="#059669">3</text>
+
+  <rect x="365" y="820" width="870" height="38" rx="19" fill="#eff6ff" stroke="#bfdbfe"/>
+  <text x="414" y="845" class="small">输出：飞书消息 · Markdown 风格报告 · 可横向滚动表格 · 总线时序图 · 重点结论摘要</text>
+</svg>
+

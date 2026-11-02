@@ -1,0 +1,27 @@
+services:
+  blu-agent-local-batch:
+    image: blu-agent-local-batch:latest
+    build:
+      context: ../..
+      dockerfile: deploy/intranet_batch/Dockerfile
+    container_name: blu-agent-local-batch
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      BLU_AGENT_RUNTIME_DIR: /runtime
+      BLU_AGENT_RUNTIME: /runtime
+      LOCAL_BATCH_HOST: 0.0.0.0
+      LOCAL_BATCH_PORT: 8080
+      LOCAL_BATCH_UI_RUNTIME: /outputs
+      LOCAL_BATCH_DATA_ROOT: /data
+      LOCAL_BATCH_H5_SEARCH_BASE_DIR: /data
+      BATCH_ROOT_CAUSE_ANALYSIS_MODE: deepseek_investigation
+    ports:
+      - "8080:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./runtime:/runtime
+      - ./outputs:/outputs
+      - /mnt/adas_h5_data:/data:ro

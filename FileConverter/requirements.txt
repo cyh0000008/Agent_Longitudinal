@@ -1,0 +1,4 @@
+asammdf==7.4.5
+python-can==4.5.0
+canmatrix==1.2
+numpy>=1.23,<2
