@@ -6,9 +6,10 @@ usage() {
 Usage:
   ./deploy/ubuntu_run/update_blu_agent.sh [--no-start] [installer options]
 
-Updates the main branch, installs the latest code and dependencies, runs the
-health check, then starts Blu in the foreground. Use --no-start to only update
-and install. Any remaining options are passed to install_blu_agent.sh.
+Installs the code currently checked out in this repository, runs the health
+check, then starts Blu in the foreground. Update the repository separately
+before running this script. Use --no-start to only install. Any remaining
+options are passed to install_blu_agent.sh.
 EOF
 }
 
@@ -40,29 +41,6 @@ fi
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${REPO_ROOT}"
 
-if ! command -v git >/dev/null 2>&1; then
-  echo "git is required. Install it, then rerun this script." >&2
-  exit 1
-fi
-
-if [[ "$(git branch --show-current)" != "main" ]]; then
-  echo "This updater only updates the main branch. Check out main and rerun." >&2
-  exit 1
-fi
-
-if [[ -n "$(git status --porcelain --untracked-files=normal)" ]]; then
-  cat >&2 <<'EOF'
-The repository has uncommitted or untracked files. Nothing was updated.
-Commit or move those files out of the repository, then rerun this script.
-Ignored local files such as .env and machine-specific data are not affected.
-EOF
-  git status --short >&2
-  exit 1
-fi
-
-echo "Updating ${REPO_ROOT} from origin/main..."
-git pull --ff-only origin main
-
 INSTALLER="${REPO_ROOT}/deploy/ubuntu_run/install_blu_agent.sh"
 if [[ ! -f "${INSTALLER}" ]]; then
   echo "Installer not found: ${INSTALLER}" >&2
@@ -73,7 +51,7 @@ mkdir -p "${REPO_ROOT}/dist"
 cp "${REPO_ROOT}/deploy/ubuntu_run/env.example" "${REPO_ROOT}/dist/env.example"
 
 if [[ "${START_AFTER_INSTALL}" -eq 1 ]]; then
-  echo "The installer will start Blu in the foreground after updating."
+  echo "The installer will start the checked-out Blu version in the foreground."
   echo "Stop any existing Blu process first to avoid running two bot instances."
   INSTALLER_ARGS+=(--start)
 fi

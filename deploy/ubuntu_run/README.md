@@ -58,7 +58,7 @@ blu-agent-uninstall
 source ~/.bashrc
 ```
 
-### 从 Git 仓库一键更新并启动
+### 安装当前仓库版本并启动
 
 第一次先克隆私有仓库：
 
@@ -67,15 +67,15 @@ git clone git@github.com:cyh0000008/Agent_Longitudinal.git
 cd Agent_Longitudinal
 ```
 
-配置好 GitHub SSH key 后，日常更新前先在运行机器上停止旧的机器人进程（如果正在运行，在其终端按 `Ctrl+C`），然后执行：
+先手动获取想安装的代码版本：首次用 `git clone`；后续更新时在仓库目录执行 `git pull --ff-only origin main`。完成后，停止旧的机器人进程（如果正在运行，在其终端按 `Ctrl+C`），再执行安装脚本：
 
 ```bash
 bash deploy/ubuntu_run/update_blu_agent.sh
 ```
 
-脚本会检查工作区无未提交改动、快进更新 `origin/main`、刷新依赖、保留用户级 `.env`，运行健康检查后以前台方式启动最新版。按 `Ctrl+C` 可停止机器人。请勿同时运行多个实例，也不要同时在 Windows 和 Ubuntu 启动同一个机器人。
+脚本不会访问 Git 或拉取代码；它只安装当前本地仓库版本、刷新依赖、保留用户级 `.env`，运行健康检查后以前台方式启动。按 `Ctrl+C` 可停止机器人。请勿同时运行多个实例，也不要同时在 Windows 和 Ubuntu 启动同一个机器人。
 
-只更新和安装、不启动机器人：
+只安装当前仓库版本、不启动机器人：
 
 ```bash
 bash deploy/ubuntu_run/update_blu_agent.sh --no-start
