@@ -19,6 +19,8 @@ dist/
 analysis_engine/config.json
 config/*
 !config/README.md
+!config/agent_capabilities.xlsx
+!config/agent_capabilities.xlsx
 deploy/ubuntu_run/private/
 deploy/ubuntu_run/*.env
 deploy/intranet_batch/.env

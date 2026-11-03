@@ -75,6 +75,8 @@ EXCLUDED_RELATIVE_FILES = {
 REQUIRED_RUNTIME_FILES = {
     "main.py",
     "batch_root_cause_analysis.py",
+    "kpi_report_analysis.py",
+    "kpi_report_charts.py",
     "deepseek_root_cause_analysis.py",
     "root_cause_analysis.py",
     "axle_torque_accuracy_analysis.py",
@@ -94,6 +96,11 @@ REQUIRED_RUNTIME_FILES = {
 
 REQUIRED_UBUNTU_ENV_VALUES = {
     "BATCH_ROOT_CAUSE_ANALYSIS_MODE": "deepseek_investigation",
+    "KPI_REPORT_BASE_TOKEN": "XzVtbQGDGaEgQ9s6rOXc0yyJnQg",
+    "KPI_REPORT_TABLE_ID": "tblLhHnElIL7llm4",
+    "KPI_REPORT_FIELD_REPORT": "版本KPI报告",
+    "KPI_REPORT_FIELD_TRIGGER": "是否进行KPI报告AI分析",
+    "KPI_REPORT_FIELD_RESULT": "KPI报告AI分析结果",
 }
 
 
@@ -297,4 +304,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

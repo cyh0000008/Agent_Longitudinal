@@ -690,6 +690,26 @@ seed_env_from_process() {
   done
 }
 
+seed_kpi_report_defaults() {
+  local key default_value
+  for key in \
+    KPI_REPORT_BASE_TOKEN \
+    KPI_REPORT_TABLE_ID \
+    KPI_REPORT_FIELD_REPORT \
+    KPI_REPORT_FIELD_TRIGGER \
+    KPI_REPORT_FIELD_RESULT \
+    KPI_REPORT_TRIGGER_VALUE \
+    KPI_REPORT_RESET_VALUE; do
+    if [[ -n "$(read_env_value "${key}")" ]]; then
+      continue
+    fi
+    default_value="$(awk -F= -v key="${key}" '$1 == key {sub(/^[^=]*=/, ""); print; exit}' "${ENV_EXAMPLE}")"
+    if [[ -n "${default_value}" ]]; then
+      write_env_value "${key}" "${default_value}"
+    fi
+  done
+}
+
 prompt_env_value() {
   local key="$1"
   local label="$2"
@@ -735,6 +755,9 @@ configure_env() {
   fi
 
   seed_env_from_process
+  # Git updates keep the user's existing env file. Backfill only the non-secret
+  # coordinates and real field names for the production KPI Base.
+  seed_kpi_report_defaults
   delete_env_value "BLU_AGENT_RUNTIME_DIR"
   delete_env_value "BLU_AGENT_RUNTIME"
   RUNTIME_DIR="$(choose_runtime_dir "${RUNTIME_DIR}")"
@@ -1041,7 +1064,7 @@ if missing_files:
         print("  - missing", item)
     raise SystemExit(1)
 
-modules = ["batch_root_cause_analysis", "deepseek_root_cause_analysis", "root_cause_analysis", "axle_torque_accuracy_analysis"]
+modules = ["batch_root_cause_analysis", "kpi_report_analysis", "deepseek_root_cause_analysis", "root_cause_analysis", "axle_torque_accuracy_analysis"]
 missing_modules = []
 for module in modules:
     try:

@@ -378,6 +378,24 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\init_batch_root_caus
 - 批量飞书入口必须后台执行，不能长时间阻塞飞书消息事件处理；否则 `取消当前问题分析` 这类运行中控制指令无法及时生效。
 - 批量测试样例 H5 是长期测试夹具，统一生成到 `sample_data/batch_root_cause/`，不要放在启动会清理的 `analysis_results/`；`analysis_results/` 只作为运行产物目录。
 
+### 4.1 多维表格 KPI 报告 AI 分析
+
+- 图头仅显示报告表头中的车型、动力形式、两版数据日期和版本变化；缺失标为未提供，不用文件名推断。图中不显示文件/工作表名称、来源单元格或“不可比”；数值无法判断升降时只展示准出变化，不虚构趋势。
+- ABS/TCS/VSE 关联 ACC 退出指标在提取时排除，不进入 AI 或图表。AI 输入和图表对比明细共用筛选：相对上一版变化≥50%且绝对差值>6，或非空准出结论改变；上一版为零时相对变化无定义，仅按准出改变保留。无基线仅展示当前未准出项。准出总览仍统计其余全部有效指标，不能用筛选项推断整体准出。
+- KPI 接口预检查默认使用 `KIMI_TIMEOUT_SECONDS`，而不是通用的 20 秒探测超时；失败信息保留脱敏后的实际错误，方便区分超时、认证和限流。
+- KPI 接口预检查和报告解读独立使用 `KIMI_API_KEY`、`KIMI_MODEL`（默认 `kimi-for-coding`）、`KIMI_TIMEOUT_SECONDS`（默认 120 秒），固定通过 Kimi Code OpenAI 接口调用；不继承 `LLM_API_PROTOCOL`，缺少密钥时明确报错，不回退到 `LLM_*`，其他能力保持原模型配置。真实内部报告不得外传至第三方模型；外部接口验证只使用非敏感合成数据。
+- 有且只有固定指令 `分析飞书多维表格中的KPI报告` 可以启动；固定取消指令为 `取消当前KPI分析`。
+- 生产目标是知识库 `OkEcwJBTYiDq6Ck0wcDcATXFnpe` 下的真实多维表格 `纵向KPI结果及分析汇总表`，默认 app token 为 `XzVtbQGDGaEgQ9s6rOXc0yyJnQg`，表 ID 为 `tblLhHnElIL7llm4`。不得凭空创建另一套 KPI 字段。
+- 入口完整分页读取 Base 字段和记录，只处理 `是否进行KPI报告AI分析 = 是` 的行。成功写回后把该触发列复位为 `否`；附件下载、解析或 AI 分析失败时不修改该记录，保留 `是` 以便重试。
+- 真实必需字段为 `版本KPI报告`（附件）、`是否进行KPI报告AI分析`（单选）和 `KPI报告AI分析结果`（文本），字段名可用 `KPI_REPORT_FIELD_REPORT`、`KPI_REPORT_FIELD_TRIGGER`、`KPI_REPORT_FIELD_RESULT` 覆盖。
+- 只下载并解析 `版本KPI报告`，不得读取 `Bad Case列表` 作为模型输入，也不得读取或结合责任人、作者、部门等其他列。模型输入只能包含报告附件提取内容和记录 ID。
+- `KPI报告AI分析结果` 只写不含具体数字的定性摘要，按总体判断、改善表现、退化与风险、证据边界四段组织；不再输出原因和建议章节。输入 compact 在本地缩短行标签、去除空白、提取重复长描述字典，保留指标数值与证据，不额外调用模型压缩；每次请求独立。图片按摘要本地绘制，不消耗额外模型 token。禁止通过截断报告冒充完整上下文压缩。
+- `kpi_report_charts.py` 从 Excel 原始值及 RGB/主题绿色表头识别当前版本，对比左侧相邻版本；无基线仅展示当前状态。图示不是摘要截图：固定 1600 像素宽、自适应高度 PNG，含准出饼图、MPI/CPI 独立变化分布柱图、全部指标分组对比与明细表（真实数值、样本/事件、标准、准出变化、单元格来源）。旧版蓝、新版绿、未准出红。每行独立刻度，下界和零事件不判升降，不跨指标求和或暗示因果。结构不明报错，不猜测。写入 `KPI报告AI分析图示`，上传和摘要同次回写成功才计成功，临时图自动清理。
+- 分析结果只写入多维表格对应列，不向群卡片展示报告正文或分析内容；群里只保留进度和最终计数状态。
+- 必须配置 `KPI_REPORT_BASE_TOKEN`、`KPI_REPORT_TABLE_ID`；安装配置模板默认指向上述真实表。不得运行脚本创建虚构 KPI 表结构。
+- 该能力必须后台执行，不能阻塞飞书事件处理；取消只作用于同一 `open_id + chat_id` 下正在运行的 KPI 分析。
+- 在下载附件或写回前必须先探测 AI 接口；接口不可用时整批停止且不修改表格。单批模型调用遇到临时错误按 `KPI_REPORT_LLM_RETRY_ATTEMPTS` 重试，默认 3 次。
+
 内网 Excel / 镜像部署补充：
 
 - 内网形态只保留批量行车问题原因分析，不启动飞书机器人，不读取飞书多维表格，不安装或调用 `lark-cli`。入口是 `local_batch_ui.py` 本地 Web UI，用户上传同格式 Excel 后点击分析，最终下载 `分析结果.xlsx + images/ + run_report.json` 的结果包。
@@ -654,6 +672,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\init_batch_root_caus
 - `actuator_handshake_analysis`：执行器分析，基于上传的总线数据和原始接口文档整理出来的本地索引识别断握手、降级、状态未闭环等问题；结果必须翻译成用户可理解的接口响应问题。
 - `root_cause_analysis`：行车问题原因分析，编排性能问题分析和执行器分析，并补充读取算法请求侧、算法请求诱因与执行器响应侧信号，面向顿挫、重制动、误制动、漏制动、未达到 set speed、溜车、跟车距离异常、横向-猛打等现象形成证据链。
 - `batch_root_cause_analysis`：批量行车问题原因分析，是本地固定命令入口，不暴露给 DeepSeek 的可选 skill 列表。只有用户发送固定指令 `分析飞书多维表格中的问题` 时，本地代码才直接触发；读取配置好的飞书多维表格，逐行调用 `root_cause_analysis`，并把结论和信号图示回写到表格。
+- `kpi_report_analysis`：KPI 报告 AI 分析，是本地固定命令入口，不暴露给 DeepSeek 的可选 skill 列表。只有用户发送固定指令 `分析飞书多维表格中的KPI报告` 时本地触发；只读取报告内容列，并把分析、原文可证实原因和改进建议写回 Base。
 - `batch_root_cause_analysis` 回写 `Agent_结论概要` 时只写给路试人员看的原因点或缺失证据点，例如“误制动更像感知/场景输入触发：前车目标先出现，算法随后给出减速请求，执行器是在跟随”或“顿挫更像执行器响应导致：算法减速度请求较平顺，但制动/驱动实际响应在问题时刻抖动”。必要时可附 1-2 个真实信号名用于追溯；完整证据、下一步建议和表格留在 `Agent_分析结论`。
 - `axle_torque_accuracy_analysis`：轴端扭矩准确性校验，上传 `.blf` 后用 ECM/CCB ARXML 解析目标报文，按发动机扭矩至轴端扭矩公式复算，并与 `IActAxleTrq` 对比输出准/不准、误差指标、异常窗口和图示。默认 `AXLE_TORQUE_OUTPUT_SCALE=1`，只做诊断结论，不回传 MDF 文件。
 - `function_exit_analysis`：ACC/LCC 功能退出原因查询与分析。无文件时用于查询 `config/acc_lcc_exit_reason_rules.xlsx` 中定义的退出原因、退出原因码、退出条件、抑制原因，以及“某个条件是否已被定义为退出原因”；明确基于上传数据、H5、这段数据定位退出点时，才等待 `.h5/.hdf5` 并检查 ACC/LCC 激活态退出、临时退出、退出原因码和抑制条件。用户问 ACC/LCC 非退出相关的状态流程、条件、信号置位或设计要求时，才走 `actuator_reference_search`。
@@ -984,6 +1003,8 @@ Ubuntu 运行时目录补充：不要再使用共享目录 `/tmp/blu_agent`，�
 2026-09-03 批量 BLF 自动解析补充：批量行车问题原因分析自动查找 H5 失败时，会继续在 `BATCH_ROOT_CAUSE_BLF_SEARCH_BASE_DIR` 下按车型、车号、日期和问题时间查找原始 BLF。该目录必须由部署环境配置，不假定固定数据盘路径。BLF 目录名只做大小写不敏感和非字母数字归一化匹配，不要硬编码具体车型目录前后缀；候选 BLF 按文件名起始时间和同目录相邻 BLF 判断覆盖问题时间。解析输出写入 `BATCH_ROOT_CAUSE_H5_SEARCH_BASE_DIR` 下的 parsed 结构：`<车型变体>-<车号>/<YYYYMMDD>-<车型变体>-<车号>_parsed/<blf_stem>_parsed.h5`。Ubuntu 一键安装必须检查 parsed H5 根目录能创建和写入；没有权限时安装脚本先尝试通过 `sudo setfacl` 给当前用户授权，失败时必须停止并给出管理员授权命令。迁移包必须包含所需解析脚本和经授权提供的接口数据库。
 
 后续凡是改到环境变量、启动脚本、部署目录、批量表格字段、依赖库、运行时路径、飞书用户授权 scope 或 bot 应用权限清单，必须同步更新 `deploy/ubuntu_run/env.example`、`deploy/ubuntu_run/install_blu_agent.sh`、`deploy/ubuntu_run/README.md`，重新生成 `dist/Agent_ubuntu_one_click/` 和 `dist/Agent_ubuntu_one_click.tar.gz`，并在本节记录影响点；不能只改 Windows 当前工程。`deploy/ubuntu_run/` 仅作为 Windows 侧打包源码维护，Ubuntu 用户不直接使用；`deploy/ubuntu_run/prepare_ubuntu_project.py` 会在每次打包时重新生成 `dist/install_blu_one_click.sh`，把安装入口复制到生成包的 `Agent/dist/` 下，把迁移说明复制为 `Agent/README_UBUNTU.md`，并在包根生成 `README_UBUNTU_DEPLOY.txt`，最后自动压缩成 `dist/Agent_ubuntu_one_click.tar.gz`，确保私有一键脚本跟当前 `.env`、字段名、模型配置和授权/权限配置一致，避免旧配置滞留。
+
+Windows / Ubuntu Git 同步补充：Git 仓库是代码同步的唯一事实源。每次整理或修改运行代码后，都必须同步检查并更新 `deploy/windows_run/*` 与 `deploy/ubuntu_run/*` 的安装/更新脚本、环境变量模板和说明；两端更新器默认只允许 `git pull --ff-only`，工作区不干净、分支无 upstream 或无法快进时必须停止并提示人工处理，不能 reset、强制覆盖或自动丢弃本地修改。Windows 与 Ubuntu 安装器都要安装当前 checkout 的 `requirements.txt`，保留本机 `.env`/用户配置和外部数据库，不把密钥写入 Git。交付前至少验证 Python 语法、目标能力测试、安装脚本语法和安装包/当前 checkout 中必需模块完整性。
 
 ## 内网 Excel 批量分析镜像部署
 

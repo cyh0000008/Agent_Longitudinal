@@ -9,6 +9,7 @@ TASK_ACTUATOR_HANDSHAKE = "actuator_handshake"
 TASK_PERFORMANCE_ANALYSIS = "performance_analysis"
 TASK_ROOT_CAUSE_ANALYSIS = "root_cause_analysis"
 TASK_BATCH_ROOT_CAUSE_ANALYSIS = "batch_root_cause_analysis"
+TASK_KPI_REPORT_ANALYSIS = "kpi_report_analysis"
 TASK_FUNCTION_EXIT_ANALYSIS = "function_exit_analysis"
 TASK_BLF_TO_MDF_CONVERSION = "blf_to_mdf_conversion"
 TASK_AXLE_TORQUE_ACCURACY = "axle_torque_accuracy"
@@ -32,6 +33,7 @@ SKILL_ACTUATOR_REFERENCE_SEARCH = "actuator_reference_search"
 SKILL_ACTUATOR_HANDSHAKE_ANALYSIS = "actuator_handshake_analysis"
 SKILL_ROOT_CAUSE_ANALYSIS = "root_cause_analysis"
 SKILL_BATCH_ROOT_CAUSE_ANALYSIS = "batch_root_cause_analysis"
+SKILL_KPI_REPORT_ANALYSIS = "kpi_report_analysis"
 SKILL_FUNCTION_EXIT_ANALYSIS = "function_exit_analysis"
 SKILL_BLF_TO_MDF_CONVERSION = "blf_to_mdf_conversion"
 SKILL_AXLE_TORQUE_ACCURACY_ANALYSIS = "axle_torque_accuracy_analysis"
@@ -42,8 +44,8 @@ CAPABILITY_CONFIG_PATH = ROOT / "config" / "agent_capabilities.xlsx"
 
 # Local-only skills are intentionally not exposed to DeepSeek. They are entered
 # only by exact local commands or internal code paths.
-LOCAL_ONLY_AGENT_SKILLS = {SKILL_BATCH_ROOT_CAUSE_ANALYSIS}
-LOCAL_ONLY_TASK_TYPES = {TASK_BATCH_ROOT_CAUSE_ANALYSIS}
+LOCAL_ONLY_AGENT_SKILLS = {SKILL_BATCH_ROOT_CAUSE_ANALYSIS, SKILL_KPI_REPORT_ANALYSIS}
+LOCAL_ONLY_TASK_TYPES = {TASK_BATCH_ROOT_CAUSE_ANALYSIS, TASK_KPI_REPORT_ANALYSIS}
 
 
 TASK_TYPE_LABELS = {
@@ -52,6 +54,7 @@ TASK_TYPE_LABELS = {
     TASK_PERFORMANCE_ANALYSIS: "性能问题分析",
     TASK_ROOT_CAUSE_ANALYSIS: "行车问题原因分析",
     TASK_BATCH_ROOT_CAUSE_ANALYSIS: "批量行车问题原因分析",
+    TASK_KPI_REPORT_ANALYSIS: "多维表格 KPI 报告 AI 分析",
     TASK_FUNCTION_EXIT_ANALYSIS: "ACC/LCC功能退出原因分析",
     TASK_BLF_TO_MDF_CONVERSION: "BLF 转 MDF 转换",
     TASK_AXLE_TORQUE_ACCURACY: "轴端扭矩准确性校验",
@@ -506,6 +509,36 @@ AGENT_SKILLS: tuple[AgentSkill, ...] = (
         ),
         examples=(
             "分析飞书多维表格中的问题",
+        ),
+    ),
+    AgentSkill(
+        name=SKILL_KPI_REPORT_ANALYSIS,
+        title="多维表格 KPI 报告 AI 分析",
+        category=SKILL_CATEGORY_DIAGNOSTIC_ANALYSIS,
+        task_type=TASK_KPI_REPORT_ANALYSIS,
+        summary="固定指令“分析飞书多维表格中的KPI报告”触发后，下载真实表格中标记为“是”的版本 KPI 报告附件，仅依据附件内容生成分析并写回结果列。",
+        when_to_use=(
+            "用户发送固定指令：分析飞书多维表格中的KPI报告",
+        ),
+        input_contract=(
+            "已配置 KPI_REPORT_BASE_TOKEN 和 KPI_REPORT_TABLE_ID",
+            "真实表必需字段：版本KPI报告、是否进行KPI报告AI分析、KPI报告AI分析结果、KPI报告AI分析图示",
+            "仅处理 是否进行KPI报告AI分析 为“是”的记录；成功写回后将该列复位为“否”，失败时保留“是”以便重试",
+        ),
+        execution=(
+            "完整分页读取真实 Base 字段与记录；下载并解析 版本KPI报告 附件；只把附件提取内容和记录 ID 交给模型；"
+            "模型仅输出无具体数字的定性摘要；输入先本地精简行标签、空白和重复描述，不额外调用模型 compact；"
+            "摘要写入 KPI报告AI分析结果；本地从绿色当前版本及上一版本原始数据绘制准出饼图、分组柱形图和指标明细，写入 KPI报告AI分析图示。"
+        ),
+        limits=(
+            "仅固定指令可以启动，避免普通 KPI 咨询误触发批量回写",
+            "AI 不得编造未提供的业务根因；证据不足时必须说明需要进一步核实",
+            "不读取或结合 Bad Case列表、责任人、作者、部门等其他列，不向群卡片展示报告分析内容",
+            "不会删除或覆盖报告附件；成功时写摘要并替换图示列图片，把触发列复位为“否”",
+            "Base 未配置、字段缺失或权限不足时必须明确报错",
+        ),
+        examples=(
+            "分析飞书多维表格中的KPI报告",
         ),
     ),
     AgentSkill(

@@ -12,6 +12,7 @@ from agent_skills import (
     SKILL_ACTUATOR_HANDSHAKE_ANALYSIS,
     SKILL_ACTUATOR_REFERENCE_SEARCH,
     SKILL_BATCH_ROOT_CAUSE_ANALYSIS,
+    SKILL_KPI_REPORT_ANALYSIS,
     SKILL_BLF_TO_MDF_CONVERSION,
     SKILL_FEEDBACK_REPORT,
     SKILL_DTC_CODE_SEARCH,
@@ -25,6 +26,7 @@ from agent_skills import (
     SKILL_FUNCTION_EXIT_ANALYSIS,
     SKILL_SMALLTALK_CHAT,
     TASK_BLF_TO_MDF_CONVERSION,
+    TASK_KPI_REPORT_ANALYSIS,
     VALID_AGENT_SKILLS,
     VALID_TASK_TYPES,
     build_public_capability_text,
@@ -50,6 +52,7 @@ SYSTEM_PROMPT = """
 """
 
 BATCH_ROOT_CAUSE_FIXED_COMMAND = "分析飞书多维表格中的问题"
+KPI_REPORT_FIXED_COMMAND = "分析飞书多维表格中的KPI报告"
 
 WORKFLOW_PROMPT = """
 你是飞书机器人“布鲁”的流程判定助手。你要判断用户这一次消息的真实意图，并输出结构化 JSON。
@@ -602,6 +605,26 @@ def get_llm_config() -> LLMConfig | None:
     )
 
 
+def get_kimi_config() -> LLMConfig:
+    load_env()
+    api_key = os.getenv("KIMI_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("KPI 分析未配置 KIMI_API_KEY，不会回退到其他模型。")
+    timeout_text = os.getenv("KIMI_TIMEOUT_SECONDS", "120").strip()
+    try:
+        timeout_seconds = int(timeout_text)
+    except ValueError as exc:
+        raise ValueError("KIMI_TIMEOUT_SECONDS 必须为正整数。") from exc
+    if timeout_seconds <= 0:
+        raise ValueError("KIMI_TIMEOUT_SECONDS 必须为正整数。")
+    return LLMConfig(
+        api_base_url="https://api.kimi.com/coding/v1",
+        api_key=api_key,
+        model=os.getenv("KIMI_MODEL", "").strip() or "kimi-for-coding",
+        timeout_seconds=timeout_seconds,
+    )
+
+
 def get_llm_display_name() -> str:
     load_env()
     model = os.getenv("LLM_MODEL", "").strip()
@@ -645,15 +668,29 @@ def llm_api_precheck_timeout_seconds() -> int:
     return 20
 
 
-def probe_llm_api_available(timeout_seconds: int | None = None) -> tuple[bool, str]:
+def probe_llm_api_available(
+    timeout_seconds: int | None = None,
+    *,
+    config: LLMConfig | None = None,
+    api_protocol: str | None = None,
+) -> tuple[bool, str]:
     reply = call_chat_completion(
         [
             {"role": "system", "content": "你是接口连通性测试助手。"},
             {"role": "user", "content": "只回复：OK"},
         ],
-        timeout_seconds=timeout_seconds or llm_api_precheck_timeout_seconds(),
+        timeout_seconds=(
+            timeout_seconds if timeout_seconds is not None
+            else config.timeout_seconds if config is not None
+            else llm_api_precheck_timeout_seconds()
+        ),
+        config=config,
+        api_protocol=api_protocol,
     )
     if is_llm_api_unavailable_reply(reply):
+        if config is not None:
+            detail = str(reply or "模型返回空响应").replace(config.api_key, "[REDACTED]")
+            return False, f"{config.model} API不可用：{detail[:600]}"
         return False, get_llm_api_unavailable_message()
     return True, ""
 
@@ -993,6 +1030,28 @@ def decide_agent_action(
             reply="",
         )
 
+    if is_kpi_report_analysis_intent(user_text):
+        return AgentDecision(
+            action="call_tool",
+            tool=SKILL_KPI_REPORT_ANALYSIS,
+            task_type=TASK_KPI_REPORT_ANALYSIS,
+            database_name=session_state.get("database"),
+            problem_groups=[],
+            tool_query=user_text,
+            reply="",
+        )
+
+    if is_kpi_report_analysis_near_miss(user_text):
+        return AgentDecision(
+            action="ask",
+            tool=None,
+            task_type=None,
+            database_name=session_state.get("database"),
+            problem_groups=[],
+            tool_query=user_text,
+            reply=kpi_report_near_miss_reply(),
+        )
+
     if is_batch_root_cause_analysis_near_miss(user_text):
         return AgentDecision(
             action="ask",
@@ -1256,6 +1315,11 @@ def merge_agent_decision(
         tool = SKILL_BATCH_ROOT_CAUSE_ANALYSIS
         task_type = "batch_root_cause_analysis"
 
+    if is_kpi_report_analysis_intent(user_text):
+        action = "call_tool"
+        tool = SKILL_KPI_REPORT_ANALYSIS
+        task_type = TASK_KPI_REPORT_ANALYSIS
+
     if is_blf_to_mdf_conversion_intent(user_text):
         action = "call_tool"
         tool = SKILL_BLF_TO_MDF_CONVERSION
@@ -1280,10 +1344,16 @@ def merge_agent_decision(
         tool = fallback.tool
         task_type = fallback.task_type
 
+    if tool == SKILL_KPI_REPORT_ANALYSIS and not is_kpi_report_analysis_intent(user_text):
+        action = fallback.action
+        tool = fallback.tool
+        task_type = fallback.task_type
+
     protected_tools = {
         SKILL_SMALLTALK_CHAT,
         SKILL_FUNCTION_EXIT_ANALYSIS,
         SKILL_BATCH_ROOT_CAUSE_ANALYSIS,
+        SKILL_KPI_REPORT_ANALYSIS,
         SKILL_BLF_TO_MDF_CONVERSION,
     }
     allow_fallback_override = not is_skill_correction_text(user_text) and tool not in protected_tools
@@ -1299,7 +1369,7 @@ def merge_agent_decision(
 
     if (
         allow_fallback_override
-        and tool not in {SKILL_REQUIREMENT_INTAKE, SKILL_ROOT_CAUSE_ANALYSIS, SKILL_FUNCTION_EXIT_ANALYSIS, SKILL_BATCH_ROOT_CAUSE_ANALYSIS, SKILL_BLF_TO_MDF_CONVERSION}
+        and tool not in {SKILL_REQUIREMENT_INTAKE, SKILL_ROOT_CAUSE_ANALYSIS, SKILL_FUNCTION_EXIT_ANALYSIS, SKILL_BATCH_ROOT_CAUSE_ANALYSIS, SKILL_KPI_REPORT_ANALYSIS, SKILL_BLF_TO_MDF_CONVERSION}
         and fallback.action == "call_tool"
         and fallback.tool == SKILL_FAULT_TABLE_SEARCH
         and is_skill_enabled(SKILL_FAULT_TABLE_SEARCH)
@@ -1310,7 +1380,7 @@ def merge_agent_decision(
         task_type = "fault_degradation"
     if (
         allow_fallback_override
-        and tool not in {SKILL_REQUIREMENT_INTAKE, SKILL_ROOT_CAUSE_ANALYSIS, SKILL_FUNCTION_EXIT_ANALYSIS, SKILL_BATCH_ROOT_CAUSE_ANALYSIS, SKILL_BLF_TO_MDF_CONVERSION}
+        and tool not in {SKILL_REQUIREMENT_INTAKE, SKILL_ROOT_CAUSE_ANALYSIS, SKILL_FUNCTION_EXIT_ANALYSIS, SKILL_BATCH_ROOT_CAUSE_ANALYSIS, SKILL_KPI_REPORT_ANALYSIS, SKILL_BLF_TO_MDF_CONVERSION}
         and fallback.action == "call_tool"
         and fallback.tool == SKILL_PERFORMANCE_CAPABILITY_SEARCH
         and action not in {"cancel", "status", "new_request"}
@@ -1320,7 +1390,7 @@ def merge_agent_decision(
         task_type = "performance_analysis"
     if (
         allow_fallback_override
-        and tool not in {SKILL_REQUIREMENT_INTAKE, SKILL_ROOT_CAUSE_ANALYSIS, SKILL_FUNCTION_EXIT_ANALYSIS, SKILL_BATCH_ROOT_CAUSE_ANALYSIS, SKILL_BLF_TO_MDF_CONVERSION}
+        and tool not in {SKILL_REQUIREMENT_INTAKE, SKILL_ROOT_CAUSE_ANALYSIS, SKILL_FUNCTION_EXIT_ANALYSIS, SKILL_BATCH_ROOT_CAUSE_ANALYSIS, SKILL_KPI_REPORT_ANALYSIS, SKILL_BLF_TO_MDF_CONVERSION}
         and fallback.action == "call_tool"
         and fallback.tool in {SKILL_ACTUATOR_REFERENCE_SEARCH, SKILL_ACTUATOR_HANDSHAKE_ANALYSIS}
         and action not in {"cancel", "status", "new_request"}
@@ -1418,6 +1488,28 @@ def heuristic_agent_decision(user_text: str, database_names: list[str], session_
             problem_groups=[],
             tool_query=user_text,
             reply="",
+        )
+
+    if is_kpi_report_analysis_intent(user_text):
+        return AgentDecision(
+            action="call_tool",
+            tool=SKILL_KPI_REPORT_ANALYSIS,
+            task_type=TASK_KPI_REPORT_ANALYSIS,
+            database_name=session_state.get("database"),
+            problem_groups=[],
+            tool_query=user_text,
+            reply="",
+        )
+
+    if is_kpi_report_analysis_near_miss(user_text):
+        return AgentDecision(
+            action="ask",
+            tool=None,
+            task_type=None,
+            database_name=session_state.get("database"),
+            problem_groups=[],
+            tool_query=user_text,
+            reply=kpi_report_near_miss_reply(),
         )
 
     if is_batch_root_cause_analysis_near_miss(user_text):
@@ -2014,6 +2106,31 @@ def batch_root_cause_near_miss_reply() -> str:
     )
 
 
+def is_kpi_report_analysis_intent(user_text: str) -> bool:
+    return _normalize_fixed_command_text(user_text) == KPI_REPORT_FIXED_COMMAND
+
+
+def is_kpi_report_analysis_near_miss(user_text: str) -> bool:
+    if is_kpi_report_analysis_intent(user_text):
+        return False
+    normalized = _normalize_fixed_command_text(user_text)
+    if not normalized:
+        return False
+    value = normalized.lower()
+    has_table = any(term in value for term in ("飞书多维表格", "多维表格", "bitable", "base"))
+    has_kpi = "kpi" in value or "指标报告" in normalized or "经营报告" in normalized
+    has_action = any(term in normalized for term in ("分析", "生成", "处理", "执行", "回写"))
+    return has_table and has_kpi and has_action
+
+
+def kpi_report_near_miss_reply() -> str:
+    return (
+        "我看这句话像是在要求分析多维表格里的 KPI。为了避免误回写，批量入口只能用固定指令启动。\n\n"
+        f"正确说法是：`{KPI_REPORT_FIXED_COMMAND}`\n\n"
+        "重新发送这句后，我会只读取待分析记录的报告内容，并把 AI 分析、原文可证实原因和改进建议写回对应列。"
+    )
+
+
 def is_root_cause_analysis_intent(user_text: str, session_state: dict[str, Any] | None = None) -> bool:
     session_state = session_state or {}
     value = (user_text or "").lower()
@@ -2447,13 +2564,20 @@ def call_chat_completion(
     *,
     response_format: dict[str, Any] | None = None,
     timeout_seconds: int | None = None,
+    config: LLMConfig | None = None,
+    api_protocol: str | None = None,
 ) -> str:
-    config = get_llm_config()
+    config = config if config is not None else get_llm_config()
     if config is None:
         return "当前聊天回复模型还没有配置好。请先配置 `LLM_API_KEY`。"
 
     timeout = timeout_seconds if timeout_seconds is not None else config.timeout_seconds
-    if _should_use_anthropic_messages_api(config.api_base_url):
+    use_anthropic = (
+        api_protocol in {"anthropic", "claude"}
+        if api_protocol is not None
+        else _should_use_anthropic_messages_api(config.api_base_url)
+    )
+    if use_anthropic:
         return _call_anthropic_messages_api(
             config,
             messages,
@@ -2779,4 +2903,3 @@ def trim_error(detail: str, limit: int = 180) -> str:
     if len(cleaned) <= limit:
         return cleaned
     return cleaned[: limit - 3] + "..."
-

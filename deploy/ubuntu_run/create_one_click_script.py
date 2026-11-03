@@ -28,8 +28,10 @@ REQUIRED_KEYS = (
 ALLOWED_PREFIXES = (
     "FEISHU_",
     "LLM_",
+    "KIMI_",
     "AXLE_TORQUE_",
     "BATCH_ROOT_CAUSE_",
+    "KPI_REPORT_",
     "FEEDBACK_",
     "BLU_",
 )

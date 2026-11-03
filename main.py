@@ -43,6 +43,7 @@ from agent_skills import (
     SKILL_ACTUATOR_HANDSHAKE_ANALYSIS,
     SKILL_ACTUATOR_REFERENCE_SEARCH,
     SKILL_BATCH_ROOT_CAUSE_ANALYSIS,
+    SKILL_KPI_REPORT_ANALYSIS,
     SKILL_BLF_TO_MDF_CONVERSION,
     SKILL_AXLE_TORQUE_ACCURACY_ANALYSIS,
     SKILL_FEEDBACK_REPORT,
@@ -58,6 +59,7 @@ from agent_skills import (
     SKILL_SMALLTALK_CHAT,
     TASK_ROOT_CAUSE_ANALYSIS,
     TASK_BATCH_ROOT_CAUSE_ANALYSIS,
+    TASK_KPI_REPORT_ANALYSIS,
     TASK_BLF_TO_MDF_CONVERSION,
     TASK_AXLE_TORQUE_ACCURACY,
     TASK_FUNCTION_EXIT_ANALYSIS,
@@ -89,6 +91,7 @@ from llm_service import (
     analyze_session_message,
     analyze_workflow_request,
     batch_root_cause_near_miss_reply,
+    kpi_report_near_miss_reply,
     clear_history,
     decide_agent_action,
     generate_group_reply,
@@ -104,6 +107,8 @@ from llm_service import (
     is_actuator_reference_query_text,
     is_batch_root_cause_analysis_intent,
     is_batch_root_cause_analysis_near_miss,
+    is_kpi_report_analysis_intent,
+    is_kpi_report_analysis_near_miss,
 )
 from performance_analysis import (
     answer_performance_capability_question,
@@ -134,6 +139,10 @@ from batch_root_cause_analysis import (
     allowed_problem_types,
     run_batch_root_cause_analysis,
     run_single_batch_analysis,
+)
+from kpi_report_analysis import (
+    KpiReportCancelled,
+    run_kpi_report_analysis,
 )
 from function_exit_analysis import (
     format_function_exit_result_context,
@@ -182,6 +191,9 @@ BOT_OPEN_ID = "ou_9fdc53df9ab2f6e41cab01ef67c7e4d3"
 BATCH_ROOT_CAUSE_CANCEL_COMMAND = "取消当前问题分析"
 BATCH_ROOT_CAUSE_CANCEL_DISPLAY_COMMAND = f"@布鲁Mate {BATCH_ROOT_CAUSE_CANCEL_COMMAND}"
 BATCH_ROOT_CAUSE_CANCEL_HINT = f"发送 `{BATCH_ROOT_CAUSE_CANCEL_DISPLAY_COMMAND}` 可取消当前进程。"
+KPI_REPORT_CANCEL_COMMAND = "取消当前KPI分析"
+KPI_REPORT_CANCEL_DISPLAY_COMMAND = f"@布鲁Mate {KPI_REPORT_CANCEL_COMMAND}"
+KPI_REPORT_CANCEL_HINT = f"发送 `{KPI_REPORT_CANCEL_DISPLAY_COMMAND}` 可取消当前进程。"
 DATABASE_DIR = Path(__file__).resolve().parent / "database"
 LOCK_FILE = Path(__file__).resolve().parent / "logs" / "feishuagent.lock"
 
@@ -203,6 +215,7 @@ def env_int(name, default, minimum=1):
 TASK_TYPES = task_type_options()
 COMBINED_ANALYSIS_TASK = TASK_ROOT_CAUSE_ANALYSIS
 BATCH_ROOT_CAUSE_ANALYSIS_TASK = TASK_BATCH_ROOT_CAUSE_ANALYSIS
+KPI_REPORT_ANALYSIS_TASK = TASK_KPI_REPORT_ANALYSIS
 FUNCTION_EXIT_ANALYSIS_TASK = TASK_FUNCTION_EXIT_ANALYSIS
 BLF_TO_MDF_CONVERSION_TASK = TASK_BLF_TO_MDF_CONVERSION
 AXLE_TORQUE_ACCURACY_TASK = TASK_AXLE_TORQUE_ACCURACY
@@ -220,6 +233,8 @@ processed_message_ids = set()
 sent_cardkit_card_ids = {}
 active_batch_root_cause_tasks = {}
 active_batch_root_cause_lock = threading.Lock()
+active_kpi_report_tasks = {}
+active_kpi_report_lock = threading.Lock()
 started_at_ms = int(time.time() * 1000)
 last_skill_result_sweep_ms = 0
 current_reply_message_id = contextvars.ContextVar("current_reply_message_id", default="")
@@ -478,6 +493,8 @@ def task_label(value):
         return "行车问题原因分析"
     if value == BATCH_ROOT_CAUSE_ANALYSIS_TASK:
         return "批量行车问题原因分析"
+    if value == KPI_REPORT_ANALYSIS_TASK:
+        return "KPI 报告 AI 分析"
     if value == FUNCTION_EXIT_ANALYSIS_TASK:
         return "ACC/LCC功能退出原因分析"
     if value == BLF_TO_MDF_CONVERSION_TASK:
@@ -1811,6 +1828,8 @@ def _session_progress_title(session):
         return "行车问题原因分析"
     if task_type == BATCH_ROOT_CAUSE_ANALYSIS_TASK:
         return "批量行车问题原因分析"
+    if task_type == KPI_REPORT_ANALYSIS_TASK:
+        return "KPI 报告 AI 分析"
     if task_type == FUNCTION_EXIT_ANALYSIS_TASK:
         return "ACC/LCC功能退出原因分析"
     if task_type == BLF_TO_MDF_CONVERSION_TASK:
@@ -2910,6 +2929,10 @@ def is_batch_root_cause_cancel_intent(text):
     return re.sub(r"\s+", "", text or "") == BATCH_ROOT_CAUSE_CANCEL_COMMAND
 
 
+def is_kpi_report_cancel_intent(text):
+    return re.sub(r"\s+", "", text or "") == KPI_REPORT_CANCEL_COMMAND
+
+
 def is_help_request(text):
     return "求助" in (text or "")
 
@@ -3457,6 +3480,10 @@ def handle_message_event(event: P2ImMessageReceiveV1):
     key = state_key(open_id, chat_id)
     if is_batch_root_cause_cancel_intent(text):
         cancel_active_batch_root_cause(chat_id, open_id)
+        return
+
+    if is_kpi_report_cancel_intent(text):
+        cancel_active_kpi_report(chat_id, open_id)
         return
 
     if is_capability_intro_request(text):
@@ -4951,6 +4978,129 @@ def run_batch_root_cause_command(chat_id, open_id, session, query):
     return True
 
 
+def _active_kpi_report_task(key):
+    with active_kpi_report_lock:
+        return active_kpi_report_tasks.get(key)
+
+
+def _register_active_kpi_report_task(key, task):
+    with active_kpi_report_lock:
+        existing = active_kpi_report_tasks.get(key)
+        if existing and not existing.get("cancel_event").is_set():
+            thread = existing.get("thread")
+            if thread is None or thread.is_alive():
+                return False
+        active_kpi_report_tasks[key] = task
+        return True
+
+
+def _clear_active_kpi_report_task(key, cancel_event):
+    with active_kpi_report_lock:
+        current = active_kpi_report_tasks.get(key)
+        if current and current.get("cancel_event") is cancel_event:
+            active_kpi_report_tasks.pop(key, None)
+
+
+def cancel_active_kpi_report(chat_id, open_id):
+    key = state_key(open_id, chat_id)
+    task = _active_kpi_report_task(key)
+    if not task:
+        send_card(chat_id, assistant_reply_card(open_id, "当前没有正在进行的 KPI 报告 AI 分析。", "取消 KPI 分析", "orange"))
+        return True
+    task["cancel_event"].set()
+    session = task.get("session") or sessions.get(key)
+    if session:
+        update_progress_card(
+            chat_id, open_id, session, stage="取消中", template="orange",
+            detail="已收到取消指令，正在停止；未完成记录会恢复为待分析。",
+        )
+    return True
+
+
+def _run_kpi_report_worker(chat_id, open_id, session, query, cancel_event, task_key):
+    progress_callback = make_progress_callback(chat_id, open_id, session, template="blue")
+    try:
+        result = run_kpi_report_analysis(
+            progress_callback=progress_callback,
+            cancellation_check=cancel_event.is_set,
+        )
+        session["stage"] = "completed"
+        template = "red" if result.failed_count else "green"
+        detail = (
+            f"KPI 报告分析完成：扫描 {result.total_records} 条，待分析 {result.pending_count} 条，"
+            f"成功回写 {result.success_count} 条，失败 {result.failed_count} 条。分析内容仅写入多维表格。"
+        )
+        update_progress_card(chat_id, open_id, session, stage="已完成", template=template, detail=detail)
+        remember_skill_result(
+            session, SKILL_KPI_REPORT_ANALYSIS, query,
+            "KPI 报告 AI 分析已完成，详细结果已写入多维表格。", detail,
+            "KPI 报告 AI 分析", template,
+        )
+    except KpiReportCancelled as exc:
+        session["stage"] = "completed"
+        update_progress_card(
+            chat_id, open_id, session, stage="已取消", template="orange",
+            detail=f"{str(exc)} 未完成记录已恢复为待分析。",
+        )
+    except Exception as exc:
+        session["stage"] = "completed"
+        update_progress_card(
+            chat_id, open_id, session, stage="分析失败", template="red",
+            detail=f"KPI 报告分析未完成：{format_exception_for_card(exc)}",
+        )
+    finally:
+        _clear_active_kpi_report_task(task_key, cancel_event)
+
+
+def run_kpi_report_command(chat_id, open_id, session, query):
+    key = state_key(open_id, chat_id)
+    existing = _active_kpi_report_task(key)
+    if existing and not existing.get("cancel_event").is_set():
+        send_card(
+            chat_id,
+            assistant_reply_card(
+                open_id,
+                f"当前已经有 KPI 报告 AI 分析在运行。需要停止时请发送：`{KPI_REPORT_CANCEL_DISPLAY_COMMAND}`。",
+                "KPI 报告 AI 分析",
+                "orange",
+            ),
+        )
+        return True
+
+    session["task_type"] = KPI_REPORT_ANALYSIS_TASK
+    session["active_skill"] = SKILL_KPI_REPORT_ANALYSIS
+    session["request_text"] = query
+    session["stage"] = "processing"
+    session["request_id"] = uuid.uuid4().hex[:12]
+    clear_session_file_state(session)
+    start_progress_card(
+        chat_id, open_id, session, stage="查询中", template="blue",
+        detail=f"正在读取 KPI 报告多维表格，仅分析报告内容并回写对应列。{KPI_REPORT_CANCEL_HINT}",
+        force_new=True,
+    )
+    cancel_event = threading.Event()
+    worker = threading.Thread(
+        target=_run_kpi_report_worker,
+        args=(chat_id, open_id, session, query, cancel_event, key),
+        name=f"kpi-report-{session['request_id']}", daemon=True,
+    )
+    if not _register_active_kpi_report_task(
+        key, {"cancel_event": cancel_event, "session": session, "thread": worker}
+    ):
+        session["stage"] = "completed"
+        return True
+    try:
+        worker.start()
+    except Exception as exc:
+        _clear_active_kpi_report_task(key, cancel_event)
+        session["stage"] = "completed"
+        update_progress_card(
+            chat_id, open_id, session, stage="启动失败", template="red",
+            detail=f"KPI 报告分析启动失败：{format_exception_for_card(exc)}",
+        )
+    return True
+
+
 def handle_agent_decision(chat_id, open_id, session, text):
     previous_session_request = session.get("request_text") or ""
     bump_session_message_count(session, chat_id, open_id)
@@ -4967,6 +5117,17 @@ def handle_agent_decision(chat_id, open_id, session, text):
         send_card(
             chat_id,
             assistant_reply_card(open_id, batch_root_cause_near_miss_reply(), "多维表格批量分析", "orange"),
+        )
+        return True
+
+    if is_kpi_report_analysis_intent(text):
+        return run_kpi_report_command(chat_id, open_id, session, text)
+
+    if is_kpi_report_analysis_near_miss(text):
+        reset_progress_card_state(session)
+        send_card(
+            chat_id,
+            assistant_reply_card(open_id, kpi_report_near_miss_reply(), "KPI 报告 AI 分析", "orange"),
         )
         return True
 
@@ -5373,6 +5534,10 @@ def handle_agent_decision(chat_id, open_id, session, text):
     if tool == SKILL_BATCH_ROOT_CAUSE_ANALYSIS:
         query = decision.tool_query or text
         return run_batch_root_cause_command(chat_id, open_id, session, query)
+
+    if tool == SKILL_KPI_REPORT_ANALYSIS:
+        query = decision.tool_query or text
+        return run_kpi_report_command(chat_id, open_id, session, query)
 
     if tool == SKILL_ROOT_CAUSE_ANALYSIS:
         query = clean_root_cause_request_text(decision.tool_query or text)
@@ -7176,6 +7341,9 @@ def handle_session_text(chat_id, open_id, text):
     if is_batch_root_cause_cancel_intent(normalized):
         return cancel_active_batch_root_cause(chat_id, open_id)
 
+    if is_kpi_report_cancel_intent(normalized):
+        return cancel_active_kpi_report(chat_id, open_id)
+
     if is_feedback_request_text(normalized):
         remember_conversation_turn(session, "user", normalized)
         session["request_text"] = normalized
@@ -7199,6 +7367,24 @@ def handle_session_text(chat_id, open_id, text):
         send_card(
             chat_id,
             assistant_reply_card(open_id, batch_root_cause_near_miss_reply(), "多维表格批量分析", "orange"),
+        )
+        return True
+
+    if is_kpi_report_analysis_intent(normalized):
+        session["stage"] = "collecting_requirements"
+        session.pop("pending_analysis_request_text", None)
+        session.pop("analysis_tasks", None)
+        session.pop("active_skill", None)
+        return handle_agent_decision(chat_id, open_id, session, normalized)
+
+    if is_kpi_report_analysis_near_miss(normalized):
+        remember_conversation_turn(session, "user", normalized)
+        session["request_text"] = normalized
+        session["stage"] = "collecting_requirements"
+        reset_progress_card_state(session)
+        send_card(
+            chat_id,
+            assistant_reply_card(open_id, kpi_report_near_miss_reply(), "KPI 报告 AI 分析", "orange"),
         )
         return True
 
