@@ -20,6 +20,31 @@ class Metric:
     previous_status: str
     current_status: str
     source: str
+    scene: str = ""
+
+    @property
+    def summary_performance(self) -> str:
+        context = self.name.lower()
+        performances = (
+            ("舒适性", ("舒适", "顿挫", "颠簸", "冲击", "jerk", "平顺", "抖动", "振荡", "震荡", "点刹")),
+            ("响应及时性", ("响应", "反应", "时延", "延迟", "迟滞", "建立时间", "起步慢")),
+            ("制动安全性", ("刹停距离", "刹停风险", "安全距离", "碰撞", "跟车过近", "车距过近")),
+            ("坡道保持能力", ("溜车", "坡道保持")),
+            ("功能稳定性", ("断握手", "退出", "降级", "失效", "接管")),
+            ("制动强度", ("重制动", "最大减速度", "制动强度", "急刹")),
+            ("加速能力", ("最大加速度", "加速能力", "提速乏力")),
+            ("速度跟踪与稳定性", ("控速", "稳速", "setspeed", "不合理低速", "车速误差", "速度误差", "超速", "欠速")),
+            ("控制精度", ("精度", "误差", "偏差", "超调")),
+            ("目标识别连续性", ("识别", "感知", "丢失", "丢目标")),
+        )
+        for label, words in performances:
+            if any(word in context for word in words):
+                return label
+        return re.sub(r"^行车[\s:：/_-]*", "", self.name.strip())
+
+    @property
+    def summary_scene(self) -> str:
+        return re.sub(r"^行车[\s:：/_-]*", "", self.scene.strip())
 
     @property
     def direction(self) -> str:
@@ -56,6 +81,72 @@ class ReportChart:
         if not self.previous_version:
             return [m for m in self.metrics if status(m.current_status) == "未准出"]
         return [m for m in self.metrics if significant(m)]
+
+    @property
+    def comparison_groups(self) -> list[tuple[str, list[Metric]]]:
+        if not self.previous_version:
+            metrics = self.comparisons
+            return [("当前未准出（无基线）", metrics)] if metrics else []
+        labels = (
+            "新增未准出", "恢复准出", "未准出但指标提升",
+            "未准出且指标下降", "可准出但指标下降",
+        )
+        groups: dict[str, list[Metric]] = {label: [] for label in labels}
+        for metric in self.comparisons:
+            if metric.transition in labels[:2]:
+                label = metric.transition
+            elif status(metric.current_status) == "未准出" and metric.direction == "提升":
+                label = labels[2]
+            elif status(metric.current_status) == "未准出" and metric.direction == "退化":
+                label = labels[3]
+            elif status(metric.current_status) == "可准出" and metric.direction == "退化":
+                label = labels[4]
+            else:
+                label = "其他显著变化"
+            groups.setdefault(label, []).append(metric)
+        return [(label, metrics) for label, metrics in groups.items() if metrics]
+
+    @property
+    def attention_summary(self) -> str:
+        def topics(metrics: list[Metric]) -> str:
+            performances: dict[str, list[str]] = {}
+            for metric in metrics:
+                scenes = performances.setdefault(metric.summary_performance, [])
+                if metric.summary_scene and metric.summary_scene not in scenes:
+                    scenes.append(metric.summary_scene)
+            labels = [
+                performance + (f"（{'、'.join(scenes)}）" if scenes else "")
+                for performance, scenes in performances.items()
+            ]
+            return "、".join(labels[:3]) + ("等方面（完整指标见下方明细）" if len(labels) > 3 else "")
+
+        failing = [m for m in self.metrics if status(m.current_status) == "未准出"]
+        unknown = [m for m in self.metrics if status(m.current_status) == "待确认"]
+        if not self.previous_version:
+            sentences = ["缺少前序版本，不能判断版本提升或退化。"]
+            sentences.append(f"当前未准出：{topics(failing)}，需优先跟进。" if failing else "当前未发现明确未准出项。")
+        else:
+            groups = dict(self.comparison_groups)
+            messages = (
+                ("新增未准出", "需优先排查"),
+                ("未准出且指标下降", "未准出项明显下降，需重点跟进"),
+                ("可准出但指标下降", "可准出项明显下降，需关注后续准出风险"),
+                ("未准出但指标提升", "虽明显提升但仍未达到准出要求"),
+                ("恢复准出", "已恢复准出，建议后续验证稳定性"),
+                ("其他显著变化", "需结合明细确认"),
+            )
+            sentences = [
+                f"{label}：{topics(groups[label])}，{message}。"
+                for label, message in messages if label in groups
+            ]
+            if not groups:
+                sentences.append("未发现达到筛选门槛的明显变化或准出状态改变。")
+            remaining = [m for m in failing if m not in self.comparisons]
+            if remaining:
+                sentences.append(f"持续关注：{topics(remaining)}仍存在未准出项，需持续跟进。")
+        if unknown:
+            sentences.append(f"结论待确认：{topics(unknown)}准出结论待确认，暂不判断是否达标。")
+        return "\n".join(f"{index}. {sentence}" for index, sentence in enumerate(sentences, 1))
 
 
 def significant(metric: Metric) -> bool:
@@ -155,6 +246,15 @@ def extract_chart_reports(file_name: str, content: bytes) -> list[ReportChart]:
                 ), None)
                 return text(row, column) if row is not None else ""
 
+            def scene_text(row: int) -> str:
+                column = headers.get("场景")
+                if column is None:
+                    return ""
+                for merged in sheet.merged_cells.ranges:
+                    if merged.min_row <= row <= merged.max_row and merged.min_col <= column <= merged.max_col:
+                        return text(merged.min_row, merged.min_col)
+                return text(row, column)
+
             metrics: list[Metric] = []
             for row in range(header_row[0].row + 1, sheet.max_row + 1):
                 name = text(row, headers["指标名称"])
@@ -172,6 +272,7 @@ def extract_chart_reports(file_name: str, content: bytes) -> list[ReportChart]:
                         text(row, headers.get("Base准出结论")) if previous else "",
                         text(row, headers.get("Target准出结论")),
                         f"{sheet.title}!{sheet.cell(row, col).coordinate}",
+                        scene_text(row),
                     ))
             if not metrics:
                 raise ValueError(f"{sheet.title} 没有可绘制的指标。")
@@ -200,32 +301,58 @@ def render_dashboard(reports: list[ReportChart], output_path: Path) -> None:
         raise RuntimeError("缺少中文字体，请安装 Noto Sans CJK 或微软雅黑。")
     font = ImageFont.truetype(str(font_path), 22)
     small = ImageFont.truetype(str(font_path), 18)
+    metadata_font = ImageFont.truetype(str(font_path), 28)
     title = ImageFont.truetype(str(font_path), 32)
     colors = {"可准出": "#25856A", "未准出": "#C34D48", "待确认": "#8894A6"}
-    height = 130 + sum(570 + max(1, len(r.comparisons)) * 186 for r in reports)
+
+    def summary_lines(text: str) -> list[str]:
+        lines: list[str] = []
+        for paragraph in text.splitlines():
+            line = ""
+            for character in paragraph:
+                if line and small.getlength(line + character) > 1500:
+                    lines.append(line)
+                    line = ""
+                line += character
+            if line:
+                lines.append(line)
+        return lines
+
+    summaries = [summary_lines(report.attention_summary) for report in reports]
+    summary_heights = [max(180, 80 + len(lines) * 25) for lines in summaries]
+    height = 130 + sum(
+        570 + summary_height + len(r.comparisons) * 186
+        + 60 * len(r.comparison_groups)
+        for r, summary_height in zip(reports, summary_heights)
+    )
     if height > 60000:
         raise ValueError("报告图示超过画布安全限制，请拆分报告。")
     image = Image.new("RGB", (1600, height), "#F3F6FB")
     draw = ImageDraw.Draw(image)
 
-    def write(x: int, y: int, text: str, width: int, color: str = "#27364B", lines: int = 2):
+    def write(
+        x: int, y: int, text: str, width: int, color: str = "#27364B",
+        lines: int = 2, text_font: ImageFont.FreeTypeFont | None = None,
+    ):
+        selected_font = text_font or small
         remaining = str(text)
         for index in range(lines):
             line = ""
-            while remaining and draw.textlength(line + remaining[0], font=small) <= width:
+            while remaining and draw.textlength(line + remaining[0], font=selected_font) <= width:
                 line += remaining[0]
                 remaining = remaining[1:]
             if index == lines - 1 and remaining:
                 line = line[:-1] + "…"
-            draw.text((x, y + index * 25), line, font=small, fill=color)
+            draw.text((x, y + index * (selected_font.size + 7)), line, font=selected_font, fill=color)
             if not remaining:
                 break
 
     draw.rectangle((0, 0, 1600, 100), fill="#17345C")
-    draw.text((36, 24), "KPI 当前版本问题与提升 | 数据仪表盘", font=title, fill="white")
+    draw.text((36, 24), "行车纵向KPI当前版本问题与提升 | 数据仪表盘", font=title, fill="white")
     y = 130
-    for report in reports:
-        write(36, y, f"车型：{report.vehicle}    动力形式：{report.powertrain}", 1500)
+    for report, lines, summary_height in zip(reports, summaries, summary_heights):
+        write(36, y, f"车型：{report.vehicle}    动力形式：{report.powertrain}", 1500,
+              lines=1, text_font=metadata_font)
         y += 55
         draw.text((36, y), f"{report.previous_version or '无基线'}  →  {report.current_version}", font=title, fill="#17345C")
         y += 60
@@ -255,14 +382,25 @@ def render_dashboard(reports: list[ReportChart], output_path: Path) -> None:
                     draw.rectangle((790, yy + 3, 790 + 500 * count / max(len(group), 1), yy + 18), fill=color)
                 draw.text((1320, yy), str(count), font=small, fill="#27364B")
         y += 258
+        draw.rounded_rectangle((24, y + 8, 1576, y + summary_height - 12), radius=12, fill="white")
+        draw.text((40, y + 18), "版本关注摘要", font=font, fill="#17345C")
+        for index, line in enumerate(lines):
+            draw.text((40, y + 54 + index * 25), line, font=small, fill="#27364B")
+        y += summary_height
         draw.text((36, y), "重点问题与提升对比 | 蓝：上一版本  绿：当前版本", font=font, fill="#17345C")
         y += 46
         draw.text((36, y), "筛选：相对变化≥50%且绝对差值>6，或准出状态改变；下界/零事件不判升降，各行独立刻度。", font=small, fill="#69758B")
         y += 32
-        if not report.comparisons:
-            draw.text((40, y + 30), "未发现达到筛选门槛的变化或准出状态改变。" if report.previous_version else "当前未发现未准出指标。", font=font, fill="#69758B")
-            y += 186
-        for metric in sorted(report.comparisons, key=lambda m: (m.kind, status(m.current_status) != "未准出", m.direction != "退化")):
+        group_headers: dict[int, list[tuple[str, list[Metric]]]] = {}
+        ordered_metrics: list[Metric] = []
+        for label, metrics in report.comparison_groups:
+            group_headers.setdefault(len(ordered_metrics), []).append((label, metrics))
+            ordered_metrics.extend(sorted(metrics, key=lambda m: m.kind))
+        for index, metric in enumerate(ordered_metrics):
+            if index in group_headers:
+                for label, metrics in group_headers[index]:
+                    draw.text((36, y + 10), f"{label}（{len(metrics)}项）", font=font, fill="#17345C")
+                    y += 60
             draw.rounded_rectangle((24, y, 1576, y + 168), radius=12, fill="white")
             write(40, y + 8, f"{metric.kind} | {metric.name}", 480)
             changes = [metric.transition]
