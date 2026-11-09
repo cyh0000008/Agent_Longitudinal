@@ -179,7 +179,7 @@ def run_kpi_report_analysis(
             prepared.append((record_id, row_index, _extract_record_report(config, fields, chart_reports)))
             charts_by_record[record_id] = chart_reports
         except Exception as exc:
-            rows.append(_failed_row(record_id, row_index, f"读取版本 KPI 报告失败：{exc}"))
+            rows.append(_failed_row(record_id, row_index, f"读取版本 KPI 报告失败（{type(exc).__name__}）：{exc}"))
 
     for start in range(0, len(prepared), config.llm_batch_size):
         _check_cancelled(cancellation_check)
@@ -198,14 +198,17 @@ def run_kpi_report_analysis(
         _check_cancelled(cancellation_check)
         if row.status != "success" or not row.record_id:
             continue
+        phase = "图示生成"
         try:
             with tempfile.TemporaryDirectory(prefix="kpi-summary-", dir=get_runtime_root()) as folder:
                 image_path = Path(folder) / "kpi_summary.png"
                 render_dashboard(charts_by_record.get(row.record_id, []), image_path)
+                phase = "图示上传"
                 file_token = _upload_bitable_media(_tenant_access_token(), config.base_token, image_path)
                 if not file_token:
                     raise RuntimeError("图示上传未返回 file_token。")
                 _check_cancelled(cancellation_check)
+                phase = "多维表格回写"
                 _update_record(config, row.record_id, {
                     config.result_field: _format_result_text(row),
                     config.image_field: [{"file_token": file_token}],
@@ -215,8 +218,8 @@ def run_kpi_report_analysis(
             raise
         except Exception as exc:
             row.status = "failed"
-            row.error = f"摘要图示生成或回写失败：{exc}"
-            _notify(progress_callback, "回写失败", row.error)
+            row.error = f"{phase}失败（{type(exc).__name__}）：{exc}"
+            _notify(progress_callback, "回写失败", _safe_failure_reason(row.error))
             continue
         success_index += 1
         _notify(progress_callback, "回写中", f"已回写 {success_index}/{success_total} 条分析结果。")
@@ -385,7 +388,7 @@ def _analyze_report_chunk(items: list[tuple[str, int, str]]) -> list[KpiRowAnaly
             return [_failed_row(record_id, row_index, reply or "AI 接口不可用。") for record_id, row_index, _ in items]
         payload = _parse_json_object(reply)
     except Exception as exc:
-        return [_failed_row(record_id, row_index, f"AI 分析调用失败：{exc}") for record_id, row_index, _ in items]
+        return [_failed_row(record_id, row_index, f"AI 分析调用失败（{type(exc).__name__}）：{exc}") for record_id, row_index, _ in items]
 
     returned = {
         str(item.get("record_id") or ""): item
@@ -399,7 +402,12 @@ def _analyze_report_chunk(items: list[tuple[str, int, str]]) -> list[KpiRowAnaly
             rows.append(_failed_row(record_id, row_index, "AI 未返回有效的报告分析。"))
             continue
         if len(analysis) > 600 or re.search(r"\d", analysis):
-            rows.append(_failed_row(record_id, row_index, "AI 摘要包含具体数字或超过六百字符，未回写。"))
+            issues = []
+            if re.search(r"\d", analysis):
+                issues.append("包含数字")
+            if len(analysis) > 600:
+                issues.append("超过六百字符")
+            rows.append(_failed_row(record_id, row_index, f"AI 摘要{'且'.join(issues)}，未回写。"))
             continue
         rows.append(KpiRowAnalysis(
             record_id, row_index, analysis, "", "",
@@ -437,6 +445,61 @@ def _format_result_text(row: KpiRowAnalysis) -> str:
 
 def _failed_row(record_id: str, row_index: int, message: str) -> KpiRowAnalysis:
     return KpiRowAnalysis(record_id, row_index, message, "", "", "failed", message)
+
+
+def _safe_failure_reason(error: str) -> str:
+    text = str(error or "")
+    lower = text.lower()
+    if "记录缺少 record_id" in text:
+        return "记录缺少 record_id，无法回写。"
+    if "摘要包含数字" in text or "摘要超过六百字符" in text or "摘要包含数字且超过六百字符" in text:
+        return "AI 摘要包含数字且超过六百字符，未回写。" if "包含数字且超过" in text else (
+            "AI 摘要包含数字，未回写。" if "包含数字" in text else "AI 摘要超过六百字符，未回写。"
+        )
+    if "AI 未返回有效的报告分析" in text:
+        return "AI 未返回有效的报告分析，未回写。"
+    stage = next((name for marker, name in (
+        ("读取版本 KPI 报告失败", "报告读取"),
+        ("图示生成失败", "图示生成"),
+        ("图示上传失败", "图示上传"),
+        ("多维表格回写失败", "多维表格回写"),
+        ("摘要图示生成或回写失败", "图示生成或回写"),
+    ) if marker in text), "AI 分析")
+    match = re.search(r"\bHTTP(?:Error)?\s*(\d{3})\b|\b(\d{3})\s+(?:Client|Server) Error\b", text, re.I)
+    if match:
+        return f"{stage}失败：HTTP {match.group(1) or match.group(2)}。"
+    if any(word in lower for word in ("timeout", "timed out", "超时")):
+        return f"{stage}失败：连接或请求超时。"
+    known = (
+        ("缺少中文字体", "缺少中文字体，请安装 Noto Sans CJK 或微软雅黑。"),
+        ("未识别到绿色当前版本", "未识别到绿色当前版本。"),
+        ("缺少软件版本表头", "缺少软件版本表头。"),
+        ("缺少 MPI/CPI 表头", "缺少 MPI/CPI 表头。"),
+        ("缺少指标名称表头", "缺少指标名称表头。"),
+        ("没有可绘制的指标", "没有可绘制的指标。"),
+        ("超过画布安全限制", "图示超过画布安全限制。"),
+        ("附件列", "附件列缺失或不可用。"),
+        ("file_token", "附件标识缺失或上传未返回文件标识。"),
+        ("permission", "权限不足或访问被拒绝。"),
+        ("权限", "权限不足或访问被拒绝。"),
+        ("ssl", "HTTPS 连接失败，请检查网络及证书。"),
+        ("connection", "连接失败，请检查网络或代理。"),
+    )
+    for marker, description in known:
+        if marker.lower() in lower:
+            return f"{stage}失败：{description}"
+    exception = re.search(r"失败（([A-Za-z][A-Za-z0-9_]{0,80})）", text)
+    return f"{stage}失败" + (f"（{exception.group(1)}）" if exception else "") + "：具体原因未识别，请检查运行环境。"
+
+
+def kpi_failure_lines(rows: list[KpiRowAnalysis]) -> list[str]:
+    lines = []
+    for row in rows:
+        if row.status == "success":
+            continue
+        record_id = row.record_id if re.fullmatch(r"rec[A-Za-z0-9]+", row.record_id) else "未知"
+        lines.append(f"记录 {record_id}：{_safe_failure_reason(row.error)}")
+    return lines
 
 
 def _list_field_names(config: KpiReportConfig) -> set[str]:

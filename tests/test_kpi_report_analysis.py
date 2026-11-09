@@ -185,6 +185,54 @@ class KpiReportAnalysisTests(unittest.TestCase):
         with patch.object(kpi, "call_chat_completion", return_value=reply):
             rows = kpi._analyze_report_chunk([("rec1", 1, "synthetic")])
         self.assertEqual(rows[0].status, "failed")
+        self.assertIn("包含数字", rows[0].error)
+
+    def test_summary_validation_identifies_length_and_digit_failures(self):
+        for analysis, expected in (("x" * 601, "超过六百字符"), ("x" * 601 + "1", "包含数字且超过六百字符")):
+            with self.subTest(expected=expected), patch.object(
+                kpi, "call_chat_completion",
+                return_value=json.dumps({"rows": [{"record_id": "rec1", "analysis": analysis}]}),
+            ):
+                row = kpi._analyze_report_chunk([("rec1", 1, "synthetic")])[0]
+                self.assertIn(expected, row.error)
+                self.assertIn(expected, kpi.kpi_failure_lines([row])[0])
+
+    def test_failure_diagnostics_are_actionable_and_do_not_disclose_raw_errors(self):
+        rows = [
+            kpi._failed_row("rec1", 1, "读取版本 KPI 报告失败（ValueError）：Sheet! 未识别到绿色当前版本"),
+            kpi._failed_row("rec2", 2, "摘要图示生成或回写失败（RuntimeError）：缺少中文字体"),
+            kpi._failed_row("rec3", 3, "聊天模型调用失败：HTTP 429。fake-secret private-report"),
+            kpi._failed_row("rec4", 4, "AI 分析调用失败（ValueError）：fake-secret private-report"),
+            kpi._failed_row("rec5", 5, "AI 摘要包含数字，未回写。"),
+            kpi._failed_row("bad id private-report", 6, "记录缺少 record_id，无法回写。"),
+        ]
+        lines = kpi.kpi_failure_lines(rows)
+        for index, expected in enumerate(("绿色当前版本", "缺少中文字体", "HTTP 429",
+                                          "ValueError", "摘要包含数字", "记录 未知")):
+            self.assertIn(expected, lines[index])
+        self.assertNotIn("fake-secret", "\n".join(lines))
+        self.assertNotIn("private-report", "\n".join(lines))
+
+    def test_worker_displays_and_logs_failure_details_with_limit(self):
+        import main
+        import threading
+
+        rows = [kpi._failed_row(f"rec{i}", i, "AI 摘要包含数字，未回写。") for i in range(7)]
+        result = kpi.KpiReportResult(7, 7, 7, 7, 0, 7, "base", "table", rows)
+        with patch.object(main, "run_kpi_report_analysis", return_value=result), \
+             patch.object(main, "make_progress_callback"), \
+             patch.object(main, "update_progress_card") as update, \
+             patch.object(main, "remember_skill_result"), \
+             patch.object(main, "_clear_active_kpi_report_task"), \
+             patch("builtins.print") as output:
+            main._run_kpi_report_worker("chat", "user", {}, "query", threading.Event(), "key")
+        detail = update.call_args.kwargs["detail"]
+        self.assertIn("记录 rec0", detail)
+        self.assertIn("记录 rec4", detail)
+        self.assertNotIn("记录 rec5", detail)
+        self.assertIn("其余 2 条", detail)
+        self.assertEqual(output.call_count, 7)
+        self.assertIn("记录 rec6", output.call_args_list[-1].args[0])
 
     def test_compact_reduces_repetition_without_removing_evidence(self):
         repeated = "a long shared criterion for this fictional repeated metric"
@@ -617,6 +665,7 @@ class KpiReportAnalysisTests(unittest.TestCase):
         update.assert_not_called()
         self.assertEqual(result.success_count, 0)
         self.assertEqual(result.failed_count, 1)
+        self.assertIn("图示上传失败", kpi.kpi_failure_lines(result.rows)[0])
         self.assertFalse(render.call_args.args[1].parent.exists())
 
     def test_failure_keeps_trigger_and_record_unchanged(self):

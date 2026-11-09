@@ -142,6 +142,7 @@ from batch_root_cause_analysis import (
 )
 from kpi_report_analysis import (
     KpiReportCancelled,
+    kpi_failure_lines,
     run_kpi_report_analysis,
 )
 from function_exit_analysis import (
@@ -5028,12 +5029,23 @@ def _run_kpi_report_worker(chat_id, open_id, session, query, cancel_event, task_
         template = "red" if result.failed_count else "green"
         detail = (
             f"KPI 报告分析完成：扫描 {result.total_records} 条，待分析 {result.pending_count} 条，"
-            f"成功回写 {result.success_count} 条，失败 {result.failed_count} 条。分析内容仅写入多维表格。"
+            f"成功回写 {result.success_count} 条，失败 {result.failed_count} 条。"
         )
+        failure_lines = kpi_failure_lines(result.rows)
+        if failure_lines:
+            for line in failure_lines:
+                print(f"[KPI分析失败] {line}", flush=True)
+            detail += "\n失败详情：\n" + "\n".join(failure_lines[:5])
+            if len(failure_lines) > 5:
+                detail += f"\n其余 {len(failure_lines) - 5} 条请查看机器人终端。"
+        elif result.failed_count:
+            detail += "\n失败记录详情缺失，请检查机器人运行环境。"
+        else:
+            detail += "分析内容仅写入多维表格。"
         update_progress_card(chat_id, open_id, session, stage="已完成", template=template, detail=detail)
         remember_skill_result(
             session, SKILL_KPI_REPORT_ANALYSIS, query,
-            "KPI 报告 AI 分析已完成，详细结果已写入多维表格。", detail,
+            "KPI 报告 AI 分析已完成，成功记录的结果已写入多维表格。", detail,
             "KPI 报告 AI 分析", template,
         )
     except KpiReportCancelled as exc:
@@ -7609,4 +7621,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
