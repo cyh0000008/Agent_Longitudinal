@@ -90,9 +90,9 @@ bash deploy/ubuntu_run/update_blu_agent.sh --no-start
 ```text
 FEISHU_APP_ID
 FEISHU_APP_SECRET
-LLM_API_KEY
-LLM_API_BASE_URL
-LLM_MODEL
+KIMI_API_KEY
+KIMI_MODEL
+KIMI_TIMEOUT_SECONDS
 ```
 
 配置文件位置：
@@ -100,6 +100,8 @@ LLM_MODEL
 ```text
 ~/.config/blu-agent/blu-agent.env
 ```
+
+通用分析和 KPI 分析共用 `KIMI_API_KEY`、`KIMI_MODEL` 和 `KIMI_TIMEOUT_SECONDS`，固定使用 Kimi Code 接口。旧的 `LLM_API_KEY`、`LLM_API_BASE_URL` 和 `LLM_MODEL` 不再用于公共机器人；已有环境若只有旧密钥，需通过 `blu-agent-configure` 填写 Kimi 密钥。不要将密钥提交到 Git。
 
 注意：不要让 Windows 和 Ubuntu 同时运行同一个机器人后端，否则群里会重复回复。
 

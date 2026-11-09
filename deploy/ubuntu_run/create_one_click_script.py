@@ -22,7 +22,7 @@ DEFAULT_PRIVATE_ENV = ROOT_DIR / "deploy" / "ubuntu_run" / "private" / "ubuntu.e
 REQUIRED_KEYS = (
     "FEISHU_APP_ID",
     "FEISHU_APP_SECRET",
-    "LLM_API_KEY",
+    "KIMI_API_KEY",
 )
 
 ALLOWED_PREFIXES = (

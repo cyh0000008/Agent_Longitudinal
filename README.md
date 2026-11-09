@@ -35,6 +35,8 @@ python main.py
 
 飞书应用需要启用机器人、长连接事件订阅，并配置相应消息权限。Windows 部署见 [deploy/windows_run/README.md](deploy/windows_run/README.md)，Ubuntu 部署见 [deploy/ubuntu_run/README.md](deploy/ubuntu_run/README.md)。
 
+公共飞书机器人通用分析和 KPI 分析统一使用 Kimi Code，配置 `KIMI_API_KEY`、`KIMI_MODEL`（默认 `kimi-for-coding`）和 `KIMI_TIMEOUT_SECONDS`（默认 120 秒）；旧的 `LLM_API_KEY`、`LLM_API_BASE_URL` 和 `LLM_MODEL` 不再生效。内网批量分析镜像仍使用其独立模型配置。
+
 KPI 分析仅输出无具体数字的定性摘要到“KPI报告AI分析结果”。“KPI报告AI分析图示”（附件列）保存本地依据原始 Excel 绘制的仪表盘：准出饼图、MPI/CPI 变化分布柱图、全部指标版本对比与明细表，图中保留真实数值和样本标注。绿色表头为当前版本，无基线只展示当前问题，不虚构提升。统一宽度、配色和版式，高度随指标数量增加。模型输入使用紧凑指标数组，不调用模型压缩或画图。图示上传失败不更新该行，临时图自动清理。中文字体需微软雅黑或 Noto Sans CJK。外部模型联调仅使用非敏感合成数据，不发送内部报告。
 
 本地批量分析部署见 [deploy/intranet_batch/README.md](deploy/intranet_batch/README.md)。

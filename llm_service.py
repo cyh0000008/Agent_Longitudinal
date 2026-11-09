@@ -297,9 +297,6 @@ SESSION_INTENT_PROMPT = """
 - reply 保持简短自然
 """
 
-DEFAULT_BASE_URL = "https://api.deepseek.com"
-DEFAULT_MODEL = "deepseek-v4-pro"
-DEFAULT_TIMEOUT_SECONDS = 300
 MAX_HISTORY_MESSAGES = 12
 SUPPORTED_PROBLEM_GROUPS = ("stability_control", "acc_control", "apa_control")
 SUPPORTED_INTENT_TYPES = ("analysis_request", "capability_question", "dev_request", "clarify")
@@ -585,31 +582,16 @@ def is_dtc_query_text(text: str) -> bool:
 
 def get_llm_config() -> LLMConfig | None:
     load_env()
-    api_key = os.getenv("LLM_API_KEY", "").strip()
-    if not api_key:
+    if not os.getenv("KIMI_API_KEY", "").strip():
         return None
-
-    api_base_url = os.getenv("LLM_API_BASE_URL", DEFAULT_BASE_URL).strip().rstrip("/")
-    model = os.getenv("LLM_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
-    timeout_text = os.getenv("LLM_TIMEOUT_SECONDS", str(DEFAULT_TIMEOUT_SECONDS)).strip()
-    try:
-        timeout_seconds = max(5, int(timeout_text))
-    except ValueError:
-        timeout_seconds = DEFAULT_TIMEOUT_SECONDS
-
-    return LLMConfig(
-        api_base_url=api_base_url,
-        api_key=api_key,
-        model=model,
-        timeout_seconds=timeout_seconds,
-    )
+    return get_kimi_config()
 
 
 def get_kimi_config() -> LLMConfig:
     load_env()
     api_key = os.getenv("KIMI_API_KEY", "").strip()
     if not api_key:
-        raise RuntimeError("KPI 分析未配置 KIMI_API_KEY，不会回退到其他模型。")
+        raise RuntimeError("未配置 KIMI_API_KEY，不会回退到其他模型。")
     timeout_text = os.getenv("KIMI_TIMEOUT_SECONDS", "120").strip()
     try:
         timeout_seconds = int(timeout_text)
@@ -627,16 +609,7 @@ def get_kimi_config() -> LLMConfig:
 
 def get_llm_display_name() -> str:
     load_env()
-    model = os.getenv("LLM_MODEL", "").strip()
-    if model:
-        return model
-
-    api_base_url = os.getenv("LLM_API_BASE_URL", DEFAULT_BASE_URL).strip().lower()
-    if "moonshot" in api_base_url or "kimi" in api_base_url:
-        return "Moonshot/Kimi"
-    if "deepseek" in api_base_url:
-        return "DeepSeek"
-    return DEFAULT_MODEL
+    return os.getenv("KIMI_MODEL", "").strip() or "kimi-for-coding"
 
 
 def get_llm_api_unavailable_message() -> str:
@@ -648,7 +621,7 @@ def is_llm_api_unavailable_reply(reply: str) -> bool:
     if not text:
         return True
     lower = text.lower()
-    if "当前聊天回复模型还没有配置好" in text or "llm_api_key" in lower:
+    if "当前聊天回复模型还没有配置好" in text or "llm_api_key" in lower or "kimi_api_key" in lower:
         return True
     if "聊天模型调用失败" not in text:
         return False
@@ -665,7 +638,8 @@ def llm_api_precheck_timeout_seconds() -> int:
             return max(5, int(value))
         except ValueError:
             continue
-    return 20
+    config = get_llm_config()
+    return config.timeout_seconds if config is not None else 20
 
 
 def probe_llm_api_available(
@@ -2569,7 +2543,7 @@ def call_chat_completion(
 ) -> str:
     config = config if config is not None else get_llm_config()
     if config is None:
-        return "当前聊天回复模型还没有配置好。请先配置 `LLM_API_KEY`。"
+        return "当前聊天回复模型还没有配置好。请先配置 `KIMI_API_KEY`。"
 
     timeout = timeout_seconds if timeout_seconds is not None else config.timeout_seconds
     use_anthropic = (
@@ -2617,10 +2591,12 @@ def call_chat_completion(
 
 
 def _should_use_anthropic_messages_api(api_base_url: str) -> bool:
+    normalized = (api_base_url or "").strip().rstrip("/").lower()
+    if normalized == "https://api.kimi.com/coding/v1":
+        return False
     protocol = os.getenv("LLM_API_PROTOCOL", "").strip().lower()
     if protocol in {"anthropic", "claude"}:
         return True
-    normalized = (api_base_url or "").strip().rstrip("/").lower()
     return normalized.endswith("/anthropic") or "/anthropic/" in normalized
 
 

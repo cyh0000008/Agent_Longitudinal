@@ -40,6 +40,53 @@ class KpiReportAnalysisTests(unittest.TestCase):
         }), self.assertRaisesRegex(RuntimeError, "KIMI_API_KEY"):
             llm_service.get_kimi_config()
 
+    def test_general_and_kpi_share_kimi_configuration(self):
+        with patch.object(llm_service, "load_env"), patch.dict(os.environ, {
+            "KIMI_API_KEY": "synthetic-key", "KIMI_MODEL": "kimi-for-coding",
+            "KIMI_TIMEOUT_SECONDS": "120", "LLM_API_KEY": "old-key",
+            "LLM_API_BASE_URL": "https://unrelated.invalid/v1", "LLM_MODEL": "old-model",
+        }):
+            self.assertEqual(llm_service.get_llm_config(), llm_service.get_kimi_config())
+            self.assertEqual(llm_service.get_llm_display_name(), "kimi-for-coding")
+
+    def test_general_request_uses_kimi_openai_despite_old_settings(self):
+        response = unittest.mock.MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps({
+            "choices": [{"message": {"content": "OK"}}],
+        }).encode()
+        with patch.object(llm_service, "load_env"), patch.dict(os.environ, {
+            "KIMI_API_KEY": "synthetic-key", "KIMI_MODEL": "kimi-for-coding",
+            "KIMI_TIMEOUT_SECONDS": "120", "LLM_API_KEY": "old-key",
+            "LLM_API_BASE_URL": "https://unrelated.invalid/v1",
+            "LLM_API_PROTOCOL": "anthropic",
+        }), patch.object(llm_service.request, "urlopen", return_value=response) as urlopen:
+            reply = llm_service.call_chat_completion([{"role": "user", "content": "hello"}])
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.full_url, "https://api.kimi.com/coding/v1/chat/completions")
+        self.assertEqual(request.get_header("Authorization"), "Bearer synthetic-key")
+        self.assertEqual(json.loads(request.data)["model"], "kimi-for-coding")
+        self.assertEqual(urlopen.call_args.kwargs["timeout"], 120)
+        self.assertEqual(reply, "OK")
+
+    def test_general_request_requires_kimi_key(self):
+        with patch.object(llm_service, "load_env"), patch.dict(os.environ, {
+            "KIMI_API_KEY": "", "LLM_API_KEY": "old-key",
+        }), patch.object(llm_service.request, "urlopen") as urlopen:
+            reply = llm_service.call_chat_completion([{"role": "user", "content": "hello"}])
+        self.assertIn("KIMI_API_KEY", reply)
+        self.assertTrue(llm_service.is_llm_api_unavailable_reply(reply))
+        urlopen.assert_not_called()
+
+    def test_general_preflight_uses_shared_kimi_timeout(self):
+        with patch.object(llm_service, "load_env"), patch.dict(os.environ, {
+            "KIMI_API_KEY": "synthetic-key", "KIMI_TIMEOUT_SECONDS": "120",
+            "BATCH_ROOT_CAUSE_LLM_PRECHECK_TIMEOUT_SECONDS": "",
+            "LLM_API_PRECHECK_TIMEOUT_SECONDS": "",
+        }), patch.object(llm_service, "call_chat_completion", return_value="OK") as chat:
+            ok, _ = llm_service.probe_llm_api_available()
+        self.assertTrue(ok)
+        self.assertEqual(chat.call_args.kwargs["timeout_seconds"], 120)
+
     def test_preflight_uses_kimi_timeout_and_reports_failure(self):
         with patch.object(llm_service, "call_chat_completion", return_value="聊天模型调用失败：timed out") as chat:
             ok, detail = llm_service.probe_llm_api_available(

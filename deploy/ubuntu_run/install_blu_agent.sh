@@ -673,9 +673,9 @@ seed_env_from_process() {
   for key in \
     FEISHU_APP_ID \
     FEISHU_APP_SECRET \
-    LLM_API_KEY \
-    LLM_API_BASE_URL \
-    LLM_MODEL \
+    KIMI_API_KEY \
+    KIMI_MODEL \
+    KIMI_TIMEOUT_SECONDS \
     BATCH_ROOT_CAUSE_BASE_TOKEN \
     BATCH_ROOT_CAUSE_TABLE_ID \
     FEEDBACK_BASE_TOKEN \
@@ -771,7 +771,7 @@ configure_env() {
   log "Configuring credentials. Press Enter to skip optional fields."
   prompt_env_value "FEISHU_APP_ID" "FEISHU_APP_ID (same cli_xxx as Windows)"
   prompt_env_value "FEISHU_APP_SECRET" "FEISHU_APP_SECRET" 1
-  prompt_env_value "LLM_API_KEY" "LLM_API_KEY / 模型 API Key" 1
+  prompt_env_value "KIMI_API_KEY" "KIMI_API_KEY / Kimi API Key" 1
   prompt_env_value "BATCH_ROOT_CAUSE_BASE_TOKEN" "BATCH_ROOT_CAUSE_BASE_TOKEN (optional)" 0 1
   prompt_env_value "BATCH_ROOT_CAUSE_TABLE_ID" "BATCH_ROOT_CAUSE_TABLE_ID (optional)" 0 1
   prompt_env_value "FEEDBACK_BASE_TOKEN" "FEEDBACK_BASE_TOKEN (optional)" 0 1
@@ -976,7 +976,7 @@ prompt_env_value() {
 echo "Config file: ${ENV_FILE}"
 prompt_env_value "FEISHU_APP_ID" "FEISHU_APP_ID (same cli_xxx as Windows)"
 prompt_env_value "FEISHU_APP_SECRET" "FEISHU_APP_SECRET" 1
-prompt_env_value "LLM_API_KEY" "LLM_API_KEY / 模型 API Key" 1
+prompt_env_value "KIMI_API_KEY" "KIMI_API_KEY / Kimi API Key" 1
 echo "Optional values can be edited directly in ${ENV_FILE}."
 EOF
 
@@ -1001,7 +1001,7 @@ echo "Config:   \${USER_CONFIG}"
 echo
 
 missing=0
-for key in FEISHU_APP_ID FEISHU_APP_SECRET LLM_API_KEY; do
+for key in FEISHU_APP_ID FEISHU_APP_SECRET KIMI_API_KEY; do
   if [[ -z "\${!key:-}" ]]; then
     echo "[MISS] \${key}"
     missing=1

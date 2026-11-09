@@ -3,6 +3,7 @@
 Git 仓库是代码同步源，本机 `.env`、车辆数据和数据库不提交 Git。
 
 首次运行前把 `deploy\windows_run\env.example` 复制为工程根目录 `.env`，填写飞书、模型和 Base 配置；不要提交真实密钥。
+通用分析和 KPI 分析共用 `KIMI_API_KEY`、`KIMI_MODEL`、`KIMI_TIMEOUT_SECONDS`，固定使用 Kimi Code 接口；旧的 `LLM_API_KEY`、`LLM_API_BASE_URL` 和 `LLM_MODEL` 不再用于公共机器人。
 
 首次克隆后安装当前 checkout：
 
